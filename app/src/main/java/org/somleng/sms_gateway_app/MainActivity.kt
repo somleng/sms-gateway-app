@@ -23,20 +23,26 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
 import org.somleng.sms_gateway_app.ui.theme.SMSGatewayAppTheme
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.ui.graphics.Color
+import org.somleng.sms_gateway_app.data.preferences.AppSettingsDataStore
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -54,10 +60,31 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun SMSGatewayScreen(modifier: Modifier = Modifier) {
-    var deviceKey by remember { mutableStateOf("") }
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+    val appSettingsDataStore = remember { AppSettingsDataStore(context) }
+
+    // Read the device key from DataStore
+    val storedDeviceKeyFlow = appSettingsDataStore.deviceKeyFlow
+    val storedDeviceKey by storedDeviceKeyFlow.collectAsState(initial = null)
+
+    // Local state for the text field
+    var deviceKeyInput by remember { mutableStateOf("") }
     var isConnected by remember { mutableStateOf(false) }
     var isReceivingEnabled by remember { mutableStateOf(true) }
     var isSendingEnabled by remember { mutableStateOf(true) }
+
+    LaunchedEffect(storedDeviceKey) {
+        if (storedDeviceKey != null) {
+            deviceKeyInput = storedDeviceKey!!
+            if (deviceKeyInput.isNotBlank()) {
+                isConnected = true
+            }
+        } else {
+            deviceKeyInput = ""
+            isConnected = false
+        }
+    }
 
     Box(modifier = modifier.fillMaxSize()) {
         Column(
@@ -88,17 +115,20 @@ fun SMSGatewayScreen(modifier: Modifier = Modifier) {
                     isSendingEnabled = isSendingEnabled,
                     onSendingChange = { isSendingEnabled = it },
                     onDisconnectClick = {
-                        isConnected = false
-                        deviceKey = ""
+                        coroutineScope.launch {
+                            appSettingsDataStore.clearDeviceKey()
+                        }
                     }
                 )
             } else {
                 DeviceKeyEntryScreen(
-                    deviceKey = deviceKey,
-                    onDeviceKeyChange = { deviceKey = it },
+                    deviceKey = deviceKeyInput,
+                    onDeviceKeyChange = { deviceKeyInput = it },
                     onConnectClick = {
-                        if (deviceKey.isNotBlank()) {
-                            isConnected = true
+                        if (deviceKeyInput.isNotBlank()) {
+                            coroutineScope.launch {
+                                appSettingsDataStore.saveDeviceKey(deviceKeyInput)
+                            }
                         }
                     }
                 )
@@ -149,7 +179,7 @@ fun DeviceKeyEntryScreen(
         Spacer(modifier = Modifier.height(16.dp))
         Button(
             onClick = onConnectClick,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
         ) {
             Text("Connect")
         }
@@ -175,7 +205,7 @@ fun ConnectedScreen(
         modifier = modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Row() {
+        Row {
             Text(
                 "Status: ",
                 style = MaterialTheme.typography.titleMedium,
@@ -252,7 +282,8 @@ fun GreetingPreview() {
 fun ConnectedScreenPreview() {
     SMSGatewayAppTheme {
         Scaffold { innerPadding ->
-            var isConnected by remember { mutableStateOf(true) }
+            // For preview, we simulate the connected state directly
+            // DataStore won't work in Preview environment easily
             var isReceivingEnabled by remember { mutableStateOf(true) }
             var isSendingEnabled by remember { mutableStateOf(false) }
 
@@ -276,15 +307,13 @@ fun ConnectedScreenPreview() {
                     style = MaterialTheme.typography.headlineSmall,
                     modifier = Modifier.padding(bottom = 16.dp)
                 )
-                if (isConnected) {
-                    ConnectedScreen(
-                        isReceivingEnabled = isReceivingEnabled,
-                        onReceivingChange = { isReceivingEnabled = it },
-                        isSendingEnabled = isSendingEnabled,
-                        onSendingChange = { isSendingEnabled = it },
-                        onDisconnectClick = { isConnected = false }
-                    )
-                }
+                ConnectedScreen(
+                    isReceivingEnabled = isReceivingEnabled,
+                    onReceivingChange = { isReceivingEnabled = it },
+                    isSendingEnabled = isSendingEnabled,
+                    onSendingChange = { isSendingEnabled = it },
+                    onDisconnectClick = { /* Simulate disconnect */ }
+                )
             }
         }
     }
