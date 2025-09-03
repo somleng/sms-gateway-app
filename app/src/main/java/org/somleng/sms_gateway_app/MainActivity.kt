@@ -1,9 +1,14 @@
 package org.somleng.sms_gateway_app
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -42,9 +47,49 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import org.somleng.sms_gateway_app.ui.theme.SMSGatewayAppTheme
 import androidx.compose.material3.ButtonDefaults
+import androidx.core.content.ContextCompat
+import com.google.firebase.messaging.FirebaseMessaging
 import org.somleng.sms_gateway_app.data.preferences.AppSettingsDataStore
 
 class MainActivity : ComponentActivity() {
+    companion object {
+        private const val TAG = "MainActivity"
+    }
+
+    private val requestPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted: Boolean ->
+            if (isGranted) {
+                Log.d("Permission", "Notification permission granted")
+                // FCM SDK (and your app) can post notifications.
+            } else {
+                Log.d("Permission", "Notification permission denied")
+                // Inform user that notifications are disabled
+                // You could show a dialog explaining why you need the permission
+                // and how they can grant it in app settings.
+            }
+        }
+
+    private fun askNotificationPermission() {
+        // This is only necessary for API level 33 and higher.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==
+                PackageManager.PERMISSION_GRANTED
+            ) {
+                // FCM SDK (and your app) can post notifications.
+                Log.d("Permission", "Notification permission already granted")
+            } else if (shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS)) {
+                // TODO: Display an educational UI explaining to the user why your app needs the
+                // permission for a specific feature.
+                // Then, trigger the permission request.
+                // For now, just requesting directly:
+                requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            } else {
+                // Directly ask for the permission.
+                requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -54,6 +99,21 @@ class MainActivity : ComponentActivity() {
                     SMSGatewayScreen(modifier = Modifier.padding(innerPadding))
                 }
             }
+        }
+
+        askNotificationPermission()
+
+        // Get FCM Token (optional, for sending to your server)
+        FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
+            if (!task.isSuccessful) {
+                Log.w(TAG, "Fetching FCM registration token failed", task.exception)
+                return@addOnCompleteListener
+            }
+            // Get new FCM registration token
+            val token = task.result
+            Log.d(TAG, "Current FCM Token: $token")
+            // Send this token to your server if needed
+            // myFirebaseMessagingService.sendRegistrationToServer(token) // or call a method in your ViewModel
         }
     }
 }
