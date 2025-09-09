@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -48,10 +49,14 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import org.somleng.sms_gateway_app.ui.theme.SMSGatewayAppTheme
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.TextButton
 import androidx.core.content.ContextCompat
 import com.google.firebase.messaging.FirebaseMessaging
 import org.somleng.sms_gateway_app.data.preferences.AppSettingsDataStore
+import org.somleng.sms_gateway_app.services.ActionCableService
+import org.somleng.sms_gateway_app.viewmodels.ConnectionViewModel
+import org.somleng.sms_gateway_app.viewmodels.ConnectionUiState
 
 class MainActivity : ComponentActivity() {
     companion object {
@@ -217,28 +222,28 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun SMSGatewayScreen(modifier: Modifier = Modifier) {
     val context = LocalContext.current
-    val coroutineScope = rememberCoroutineScope()
-    val appSettingsDataStore = remember { AppSettingsDataStore(context) }
+    val connectionViewModel = remember { ConnectionViewModel(context) }
 
-    // Read the device key from DataStore
-    val storedDeviceKeyFlow = appSettingsDataStore.deviceKeyFlow
-    val storedDeviceKey by storedDeviceKeyFlow.collectAsState(initial = null)
+    // Collect connection state
+    val connectionState by connectionViewModel.connectionState.collectAsState(
+        initial = ConnectionUiState()
+    )
+    val connectionStatus by connectionViewModel.connectionStatus.collectAsState(
+        initial = ""
+    )
 
-    // Local state for the text field
+    // Local state for device key input
     var deviceKeyInput by remember { mutableStateOf("") }
-    var isConnected by remember { mutableStateOf(false) }
-    var isReceivingEnabled by remember { mutableStateOf(true) }
-    var isSendingEnabled by remember { mutableStateOf(true) }
 
-    LaunchedEffect(storedDeviceKey) {
-        if (storedDeviceKey != null) {
-            deviceKeyInput = storedDeviceKey!!
-            if (deviceKeyInput.isNotBlank()) {
-                isConnected = true
+    // Update device key input when stored device key changes
+    LaunchedEffect(connectionState.deviceKey) {
+        // Only update input field when not auto-connecting (when user is actually on device key screen)
+        if (!connectionState.isAutoConnecting) {
+            connectionState.deviceKey?.let { deviceKey ->
+                deviceKeyInput = deviceKey
+            } ?: run {
+                deviceKeyInput = ""
             }
-        } else {
-            deviceKeyInput = ""
-            isConnected = false
         }
     }
 
@@ -264,30 +269,35 @@ fun SMSGatewayScreen(modifier: Modifier = Modifier) {
                 modifier = Modifier.padding(bottom = 16.dp)
             )
 
-            if (isConnected) {
-                ConnectedScreen(
-                    isReceivingEnabled = isReceivingEnabled,
-                    onReceivingChange = { isReceivingEnabled = it },
-                    isSendingEnabled = isSendingEnabled,
-                    onSendingChange = { isSendingEnabled = it },
-                    onDisconnectClick = {
-                        coroutineScope.launch {
-                            appSettingsDataStore.clearDeviceKey()
-                        }
-                    }
-                )
-            } else {
-                DeviceKeyEntryScreen(
-                    deviceKey = deviceKeyInput,
-                    onDeviceKeyChange = { deviceKeyInput = it },
-                    onConnectClick = {
-                        if (deviceKeyInput.isNotBlank()) {
-                            coroutineScope.launch {
-                                appSettingsDataStore.saveDeviceKey(deviceKeyInput)
+            when {
+                connectionState.isConnected -> {
+                    ConnectedScreen(
+                        isReceivingEnabled = connectionState.isReceivingEnabled,
+                        onReceivingChange = { connectionViewModel.toggleReceiving(it) },
+                        isSendingEnabled = connectionState.isSendingEnabled,
+                        onSendingChange = { connectionViewModel.toggleSending(it) },
+                        onDisconnectClick = { connectionViewModel.disconnect() },
+                        connectionStatus = connectionState.connectionStatusText
+                    )
+                }
+                connectionState.isAutoConnecting -> {
+                    AutoConnectingScreen(
+                        connectionStatus = connectionState.connectionStatusText
+                    )
+                }
+                else -> {
+                    DeviceKeyEntryScreen(
+                        deviceKey = deviceKeyInput,
+                        onDeviceKeyChange = { deviceKeyInput = it },
+                        onConnectClick = {
+                            if (deviceKeyInput.isNotBlank()) {
+                                connectionViewModel.connect(deviceKeyInput)
                             }
-                        }
-                    }
-                )
+                        },
+                        connectionStatus = connectionState.connectionStatusText,
+                        isConnecting = connectionState.connectionState == ActionCableService.ConnectionState.CONNECTING
+                    )
+                }
             }
 
             Spacer(Modifier.weight(1f))
@@ -318,6 +328,8 @@ fun DeviceKeyEntryScreen(
     deviceKey: String,
     onDeviceKeyChange: (String) -> Unit,
     onConnectClick: () -> Unit,
+    connectionStatus: String = "",
+    isConnecting: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -336,14 +348,79 @@ fun DeviceKeyEntryScreen(
         Button(
             onClick = onConnectClick,
             modifier = Modifier.fillMaxWidth(),
+            enabled = deviceKey.isNotBlank() && !isConnecting
         ) {
-            Text("Connect")
+            if (isConnecting) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    androidx.compose.material3.CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Connecting...")
+                }
+            } else {
+                Text("Connect")
+            }
         }
         Spacer(modifier = Modifier.height(16.dp))
+        if (connectionStatus.isNotBlank()) {
+            Text(
+                text = connectionStatus,
+                style = MaterialTheme.typography.bodyMedium,
+                textAlign = TextAlign.Center,
+                color = if (connectionStatus.contains("error", ignoreCase = true)) {
+                    MaterialTheme.colorScheme.error
+                } else {
+                    MaterialTheme.colorScheme.onSurface
+                },
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+        }
         Text(
             text = "Enter the device key to connect to your SMS Gateway. You can find this device key on your Somleng dashboard.",
             style = MaterialTheme.typography.bodySmall,
             textAlign = TextAlign.Center
+        )
+    }
+}
+
+@Composable
+fun AutoConnectingScreen(
+    connectionStatus: String = "Auto-connecting to Somleng...",
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        androidx.compose.material3.CircularProgressIndicator(
+            modifier = Modifier.size(48.dp),
+            strokeWidth = 4.dp,
+            color = MaterialTheme.colorScheme.primary
+        )
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Text(
+            text = connectionStatus,
+            style = MaterialTheme.typography.titleMedium,
+            textAlign = TextAlign.Center,
+            color = MaterialTheme.colorScheme.primary
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Text(
+            text = "Please wait while we connect you to your SMS Gateway...",
+            style = MaterialTheme.typography.bodyMedium,
+            textAlign = TextAlign.Center,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
 }
@@ -355,6 +432,7 @@ fun ConnectedScreen(
     isSendingEnabled: Boolean,
     onSendingChange: (Boolean) -> Unit,
     onDisconnectClick: () -> Unit,
+    connectionStatus: String = "Connected",
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -369,9 +447,9 @@ fun ConnectedScreen(
             )
 
             Text(
-                "Connected",
+                connectionStatus,
                 style = MaterialTheme.typography.titleMedium,
-                color = Color(0xFF006400),
+                color = if (connectionStatus.contains("Connected")) Color(0xFF006400) else MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.padding(bottom = 24.dp)
             )
         }
@@ -387,7 +465,10 @@ fun ConnectedScreen(
             onCheckedChange = onSendingChange
         )
 
-        Spacer(modifier = Modifier.height(32.dp))
+        Spacer(modifier = Modifier.height(24.dp))
+
+
+        Spacer(modifier = Modifier.height(8.dp))
 
         Button(
             onClick = onDisconnectClick,

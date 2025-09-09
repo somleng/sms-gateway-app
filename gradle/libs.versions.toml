@@ -8,9 +8,10 @@ espressoCore = "3.5.1"
 lifecycleRuntimeKtx = "2.6.1"
 activityCompose = "1.8.0"
 composeBom = "2024.09.00"
-datastorePreferences="1.1.7"
+datastorePreferences = "1.1.7"
 firebase-bom = "32.7.0"
 firebase-messaging = "23.3.1"
+actioncable-client = "0.1.2"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -30,6 +31,7 @@ androidx-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-test-junit
 androidx-material3 = { group = "androidx.compose.material3", name = "material3" }
 firebase-bom = { module = "com.google.firebase:firebase-bom", version.ref = "firebase-bom" }
 firebase-messaging = { module = "com.google.firebase:firebase-messaging-ktx", version.ref = "firebase-messaging" }
+actioncable-client = { module = "com.github.hosopy:actioncable-client-java", version.ref = "actioncable-client" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
