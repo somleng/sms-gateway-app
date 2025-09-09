@@ -1,9 +1,14 @@
 package org.somleng.sms_gateway_app
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -16,6 +21,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -42,9 +48,109 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import org.somleng.sms_gateway_app.ui.theme.SMSGatewayAppTheme
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.TextButton
+import androidx.core.content.ContextCompat
+import com.google.firebase.messaging.FirebaseMessaging
 import org.somleng.sms_gateway_app.data.preferences.AppSettingsDataStore
 
 class MainActivity : ComponentActivity() {
+    companion object {
+        private const val TAG = "MainActivity"
+    }
+
+    private val requestPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted: Boolean ->
+            if (isGranted) {
+                Log.d("Permission", "Notification permission granted")
+                // FCM SDK (and your app) can post notifications.
+            } else {
+                Log.d("Permission", "Notification permission denied")
+                // Inform user that notifications are disabled
+                // You could show a dialog explaining why you need the permission
+                // and how they can grant it in app settings.
+            }
+        }
+
+    private var showSmsPermissionRationaleDialog by mutableStateOf(false)
+    private var onSmsPermissionGranted: (() -> Unit)? = null
+    private var onSmsPermissionDenied: (() -> Unit)? = null
+
+    private val requestSmsPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted: Boolean ->
+            if (isGranted) {
+                Log.d(TAG, "SEND_SMS permission granted by user.")
+                onSmsPermissionGranted?.invoke()
+            } else {
+                Log.d(TAG, "SEND_SMS permission denied by user.")
+                // Optionally, explain to the user that the feature is unavailable
+                // because the permission is needed. You could guide them to app settings.
+                onSmsPermissionDenied?.invoke()
+            }
+            // Reset callbacks
+            onSmsPermissionGranted = null
+            onSmsPermissionDenied = null
+        }
+
+    fun ensureSmsPermission(
+        onGranted: () -> Unit,
+        onDenied: (() -> Unit)? = null,
+        showRationaleBeforeRequest: Boolean = true
+    ) {
+        this.onSmsPermissionGranted = onGranted
+        this.onSmsPermissionDenied = onDenied
+
+        when {
+            ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.SEND_SMS
+            ) == PackageManager.PERMISSION_GRANTED -> {
+                Log.d(TAG, "SEND_SMS permission already granted.")
+                this.onSmsPermissionGranted?.invoke()
+                this.onSmsPermissionGranted = null // Clear callback
+                this.onSmsPermissionDenied = null  // Clear callback
+            }
+            showRationaleBeforeRequest && shouldShowRequestPermissionRationale(Manifest.permission.SEND_SMS) -> {
+                // We should show an explanation.
+                // In a Compose app, you'd typically set a state variable
+                // to trigger a Composable dialog.
+                Log.d(TAG, "Showing rationale for SEND_SMS permission.")
+                showSmsPermissionRationaleDialog = true
+                // The actual request will be launched when the user interacts with the rationale dialog.
+            }
+            else -> {
+                // No explanation needed; request the permission directly.
+                Log.d(TAG, "Requesting SEND_SMS permission.")
+                requestSmsPermissionLauncher.launch(Manifest.permission.SEND_SMS)
+            }
+        }
+    }
+
+    private fun requestSmsPermissionAfterRationale() {
+        Log.d(TAG, "Requesting SEND_SMS permission after rationale.")
+        requestSmsPermissionLauncher.launch(Manifest.permission.SEND_SMS)
+    }
+
+    private fun askNotificationPermission() {
+        // This is only necessary for API level 33 and higher.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==
+                PackageManager.PERMISSION_GRANTED
+            ) {
+                // FCM SDK (and your app) can post notifications.
+                Log.d("Permission", "Notification permission already granted")
+            } else if (shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS)) {
+                // TODO: Display an educational UI explaining to the user why your app needs the
+                // permission for a specific feature.
+                // Then, trigger the permission request.
+                // For now, just requesting directly:
+                requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            } else {
+                // Directly ask for the permission.
+                requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -52,8 +158,58 @@ class MainActivity : ComponentActivity() {
             SMSGatewayAppTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                     SMSGatewayScreen(modifier = Modifier.padding(innerPadding))
+
+                    if (showSmsPermissionRationaleDialog) {
+                        SmsPermissionRationaleDialog(
+                            onDismiss = {
+                                showSmsPermissionRationaleDialog = false
+                                // User dismissed rationale, you might still want to call onDenied
+                                onSmsPermissionDenied?.invoke()
+                                onSmsPermissionDenied = null
+                                onSmsPermissionGranted = null
+                            },
+                            onConfirm = {
+                                showSmsPermissionRationaleDialog = false
+                                requestSmsPermissionAfterRationale() // Request after user confirms rationale
+                            }
+                        )
+                    }
                 }
             }
+        }
+
+        askNotificationPermission()
+
+        ensureSmsPermission(
+            onGranted = {
+                Log.i(TAG, "SEND_SMS permission was granted on app start.")
+                // You can perform any setup here that depends on SMS permission
+            },
+            onDenied = {
+                Log.w(TAG, "SEND_SMS permission was denied on app start.")
+                // Handle the case where the user denies permission at startup.
+                // You might want to explain that certain features will be disabled
+                // or guide them to settings if they change their mind.
+            },
+            // Set to true if you want to show your custom rationale dialog
+            // if the system thinks a rationale should be shown.
+            // Set to false if you want to directly show the system dialog
+            // without your custom rationale first, even if shouldShowRequestPermissionRationale() is true.
+            // For startup, `true` is generally better to explain why it's needed immediately.
+            showRationaleBeforeRequest = true
+        )
+
+        // Get FCM Token (optional, for sending to your server)
+        FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
+            if (!task.isSuccessful) {
+                Log.w(TAG, "Fetching FCM registration token failed", task.exception)
+                return@addOnCompleteListener
+            }
+            // Get new FCM registration token
+            val token = task.result
+            Log.d(TAG, "Current FCM Token: $token")
+            // Send this token to your server if needed
+            // myFirebaseMessagingService.sendRegistrationToServer(token) // or call a method in your ViewModel
         }
     }
 }
@@ -318,3 +474,26 @@ fun ConnectedScreenPreview() {
         }
     }
 }
+
+@Composable
+fun SmsPermissionRationaleDialog(
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("SMS Permission Needed") },
+        text = { Text("This app needs permission to send SMS messages to function as an SMS gateway. This allows it to forward messages received via push notifications as SMS.") },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text("OK")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
