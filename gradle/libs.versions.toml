@@ -11,7 +11,8 @@ composeBom = "2024.09.00"
 datastorePreferences = "1.1.7"
 firebase-bom = "32.7.0"
 firebase-messaging = "23.3.1"
-actioncable-client = "0.1.2"
+actioncable-client = "master-SNAPSHOT"
+gson="2.3.1"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -32,6 +33,8 @@ androidx-material3 = { group = "androidx.compose.material3", name = "material3" 
 firebase-bom = { module = "com.google.firebase:firebase-bom", version.ref = "firebase-bom" }
 firebase-messaging = { module = "com.google.firebase:firebase-messaging-ktx", version.ref = "firebase-messaging" }
 actioncable-client = { module = "com.github.hosopy:actioncable-client-java", version.ref = "actioncable-client" }
+gson = { module = "com.google.code.gson:gson", version.ref = "gson" }
+
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

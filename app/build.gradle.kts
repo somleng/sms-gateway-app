@@ -53,6 +53,7 @@ dependencies {
   implementation(platform(libs.firebase.bom))
   implementation(libs.firebase.messaging)
   implementation(libs.actioncable.client)
+  implementation(libs.gson)
   testImplementation(libs.junit)
   androidTestImplementation(libs.androidx.junit)
   androidTestImplementation(libs.androidx.espresso.core)
