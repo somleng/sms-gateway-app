@@ -30,12 +30,12 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -49,7 +49,6 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import org.somleng.sms_gateway_app.ui.theme.SMSGatewayAppTheme
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.TextButton
 import androidx.core.content.ContextCompat
 import com.google.firebase.messaging.FirebaseMessaging
@@ -57,6 +56,9 @@ import org.somleng.sms_gateway_app.data.preferences.AppSettingsDataStore
 import org.somleng.sms_gateway_app.services.ActionCableService
 import org.somleng.sms_gateway_app.viewmodels.ConnectionViewModel
 import org.somleng.sms_gateway_app.viewmodels.ConnectionUiState
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 
 class MainActivity : ComponentActivity() {
     companion object {
@@ -223,22 +225,46 @@ class MainActivity : ComponentActivity() {
 fun SMSGatewayScreen(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val connectionViewModel = remember { ConnectionViewModel(context) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    DisposableEffect(lifecycleOwner, connectionViewModel) {
+        val lifecycle = lifecycleOwner.lifecycle
+
+        if (lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
+            connectionViewModel.onAppForegrounded()
+        }
+
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_START -> connectionViewModel.onAppForegrounded()
+                Lifecycle.Event.ON_STOP -> connectionViewModel.onAppBackgrounded()
+                else -> Unit
+            }
+        }
+
+        lifecycle.addObserver(observer)
+
+        onDispose {
+            lifecycle.removeObserver(observer)
+        }
+    }
 
     // Collect connection state
     val connectionState by connectionViewModel.connectionState.collectAsState(
         initial = ConnectionUiState()
-    )
-    val connectionStatus by connectionViewModel.connectionStatus.collectAsState(
-        initial = ""
     )
 
     // Local state for device key input
     var deviceKeyInput by remember { mutableStateOf("") }
 
     // Update device key input when stored device key changes
-    LaunchedEffect(connectionState.deviceKey) {
+    LaunchedEffect(
+        connectionState.deviceKey,
+        connectionState.isAutoConnecting,
+        connectionState.isReconnecting
+    ) {
         // Only update input field when not auto-connecting (when user is actually on device key screen)
-        if (!connectionState.isAutoConnecting) {
+        if (!connectionState.isAutoConnecting && !connectionState.isReconnecting) {
             connectionState.deviceKey?.let { deviceKey ->
                 deviceKeyInput = deviceKey
             } ?: run {
@@ -280,7 +306,7 @@ fun SMSGatewayScreen(modifier: Modifier = Modifier) {
                         connectionStatus = connectionState.connectionStatusText
                     )
                 }
-                connectionState.isAutoConnecting -> {
+                connectionState.isAutoConnecting || connectionState.isReconnecting -> {
                     AutoConnectingScreen(
                         connectionStatus = connectionState.connectionStatusText
                     )
@@ -394,6 +420,12 @@ fun AutoConnectingScreen(
     connectionStatus: String = "Auto-connecting to Somleng...",
     modifier: Modifier = Modifier
 ) {
+    val helperText = if (connectionStatus.contains("reconnecting", ignoreCase = true)) {
+        "Attempting to restore your connection to the SMS Gateway..."
+    } else {
+        "Please wait while we connect you to your SMS Gateway..."
+    }
+
     Column(
         modifier = modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -417,7 +449,7 @@ fun AutoConnectingScreen(
         Spacer(modifier = Modifier.height(16.dp))
 
         Text(
-            text = "Please wait while we connect you to your SMS Gateway...",
+            text = helperText,
             style = MaterialTheme.typography.bodyMedium,
             textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -577,4 +609,3 @@ fun SmsPermissionRationaleDialog(
         }
     )
 }
-

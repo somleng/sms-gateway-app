@@ -11,7 +11,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlin.jvm.Volatile
 import org.somleng.sms_gateway_app.data.preferences.AppSettingsDataStore
 import org.somleng.sms_gateway_app.services.ActionCableService
 
@@ -26,6 +28,18 @@ class ConnectionViewModel(private val context: Context) : ViewModel() {
 
     // Auto-connect flag to prevent repeated attempts on startup
     private var autoConnectAttempted = false
+
+    // Track reconnection attempts when returning from background or after errors
+    private val _isReconnecting = MutableStateFlow(false)
+    private var reconnectJob: Job? = null
+    private val reconnectBaseDelayMs = 3000L
+    private val reconnectMaxDelayMs = 15000L
+
+    @Volatile
+    private var isAppInForeground = true
+
+    @Volatile
+    private var hasPendingReconnect = false
 
     // Track if we're currently auto-connecting to hide device key from UI
     private val _isAutoConnecting = MutableStateFlow(false)
@@ -49,20 +63,15 @@ class ConnectionViewModel(private val context: Context) : ViewModel() {
         _isSendingEnabled,
         _isAutoConnecting
     ) { deviceKey, cableState, receiving, sending, isAutoConnecting ->
-        ConnectionUiState(
+        ConnectionInputs(
             deviceKey = deviceKey,
-            isConnected = deviceKey != null && cableState == ActionCableService.ConnectionState.CONNECTED,
             connectionState = cableState,
             isReceivingEnabled = receiving,
             isSendingEnabled = sending,
-            isAutoConnecting = isAutoConnecting,
-            connectionStatusText = when (cableState) {
-                ActionCableService.ConnectionState.CONNECTING -> if (isAutoConnecting) "Auto-connecting to Somleng..." else "Connecting to Somleng..."
-                ActionCableService.ConnectionState.CONNECTED -> "Connected to Somleng"
-                ActionCableService.ConnectionState.DISCONNECTED -> if (deviceKey != null) "Disconnected" else "Not configured"
-                ActionCableService.ConnectionState.ERROR -> "Connection error"
-            }
+            isAutoConnecting = isAutoConnecting
         )
+    }.combine(_isReconnecting) { inputs, isReconnecting ->
+        buildUiState(inputs, isReconnecting)
     }
 
     init {
@@ -75,12 +84,14 @@ class ConnectionViewModel(private val context: Context) : ViewModel() {
                 when (state) {
                     ActionCableService.ConnectionState.CONNECTED -> {
                         _isAutoConnecting.value = false
+                        cancelReconnect()
                         startHeartbeat()
                     }
                     ActionCableService.ConnectionState.DISCONNECTED,
                     ActionCableService.ConnectionState.ERROR -> {
                         _isAutoConnecting.value = false
                         stopHeartbeat()
+                        scheduleReconnectIfNeeded()
                     }
                     ActionCableService.ConnectionState.CONNECTING -> {
                         stopHeartbeat()
@@ -105,6 +116,7 @@ class ConnectionViewModel(private val context: Context) : ViewModel() {
                 appSettingsDataStore.saveDeviceKey(deviceKey)
 
                 // Connect to ActionCable
+                cancelReconnect()
                 actionCableService.connect(deviceKey)
 
             } catch (e: Exception) {
@@ -120,6 +132,7 @@ class ConnectionViewModel(private val context: Context) : ViewModel() {
     fun disconnect() {
         viewModelScope.launch {
             // Disconnect from ActionCable
+            cancelReconnect()
             actionCableService.disconnect()
 
             // Clear stored device key
@@ -188,6 +201,22 @@ class ConnectionViewModel(private val context: Context) : ViewModel() {
         }
     }
 
+    fun onAppForegrounded() {
+        isAppInForeground = true
+        if (hasPendingReconnect || shouldAttemptReconnectNow()) {
+            scheduleReconnectIfNeeded(force = true)
+        }
+    }
+
+    fun onAppBackgrounded() {
+        isAppInForeground = false
+        if (reconnectJob?.isActive == true) {
+            reconnectJob?.cancel()
+            hasPendingReconnect = true
+        }
+        _isReconnecting.value = false
+    }
+
     /**
      * Start periodic heartbeat when connected
      */
@@ -215,12 +244,90 @@ class ConnectionViewModel(private val context: Context) : ViewModel() {
         heartbeatJob = null
     }
 
+    private fun cancelReconnect() {
+        reconnectJob?.cancel()
+        reconnectJob = null
+        _isReconnecting.value = false
+        hasPendingReconnect = false
+    }
+
+    private fun scheduleReconnectIfNeeded(force: Boolean = false) {
+        if (!force && !isAppInForeground) {
+            hasPendingReconnect = true
+            return
+        }
+
+        if (actionCableService.connectionState.value == ActionCableService.ConnectionState.CONNECTED ||
+            actionCableService.connectionState.value == ActionCableService.ConnectionState.CONNECTING) {
+            return
+        }
+
+        if (reconnectJob?.isActive == true) return
+
+        reconnectJob = viewModelScope.launch {
+            val storedDeviceKey = appSettingsDataStore.deviceKeyFlow.first()
+            if (storedDeviceKey.isNullOrBlank()) {
+                hasPendingReconnect = false
+                return@launch
+            }
+
+            _isReconnecting.value = true
+            _connectionStatus.value = "Reconnecting to Somleng..."
+            hasPendingReconnect = false
+
+            try {
+                var attempt = 0
+                while (isActive) {
+                    if (!isAppInForeground) {
+                        hasPendingReconnect = true
+                        return@launch
+                    }
+
+                    val currentState = actionCableService.connectionState.value
+                    if (currentState == ActionCableService.ConnectionState.CONNECTED) {
+                        return@launch
+                    }
+
+                    if (currentState != ActionCableService.ConnectionState.CONNECTING) {
+                        try {
+                            actionCableService.connect(storedDeviceKey)
+                        } catch (e: Exception) {
+                            Log.e("ConnectionViewModel", "Reconnect attempt failed", e)
+                        }
+                    }
+
+                    attempt++
+                    val delayMillis = (reconnectBaseDelayMs * attempt).coerceAtMost(reconnectMaxDelayMs)
+                    delay(delayMillis)
+                }
+            } finally {
+                if (!isAppInForeground) {
+                    hasPendingReconnect = true
+                }
+                _isReconnecting.value = false
+            }
+        }.also { job ->
+            job.invokeOnCompletion {
+                reconnectJob = null
+            }
+        }
+    }
+
+    private fun shouldAttemptReconnectNow(): Boolean {
+        return when (actionCableService.connectionState.value) {
+            ActionCableService.ConnectionState.DISCONNECTED,
+            ActionCableService.ConnectionState.ERROR -> true
+            else -> false
+        }
+    }
+
     /**
      * Clean up resources
      */
     override fun onCleared() {
         super.onCleared()
         stopHeartbeat()
+        cancelReconnect()
         actionCableService.disconnect()
     }
 }
@@ -235,5 +342,40 @@ data class ConnectionUiState(
     val isReceivingEnabled: Boolean = true,
     val isSendingEnabled: Boolean = true,
     val isAutoConnecting: Boolean = false,
+    val isReconnecting: Boolean = false,
     val connectionStatusText: String = "Not connected"
 )
+
+private data class ConnectionInputs(
+    val deviceKey: String?,
+    val connectionState: ActionCableService.ConnectionState,
+    val isReceivingEnabled: Boolean,
+    val isSendingEnabled: Boolean,
+    val isAutoConnecting: Boolean
+)
+
+private fun buildUiState(
+    inputs: ConnectionInputs,
+    isReconnecting: Boolean
+): ConnectionUiState {
+    val statusText = when {
+        isReconnecting -> "Reconnecting to Somleng..."
+        inputs.connectionState == ActionCableService.ConnectionState.CONNECTING && inputs.isAutoConnecting -> "Auto-connecting to Somleng..."
+        inputs.connectionState == ActionCableService.ConnectionState.CONNECTING -> "Connecting to Somleng..."
+        inputs.connectionState == ActionCableService.ConnectionState.CONNECTED -> "Connected to Somleng"
+        inputs.connectionState == ActionCableService.ConnectionState.DISCONNECTED -> if (inputs.deviceKey != null) "Disconnected" else "Not configured"
+        inputs.connectionState == ActionCableService.ConnectionState.ERROR -> "Connection error"
+        else -> "Not connected"
+    }
+
+    return ConnectionUiState(
+        deviceKey = inputs.deviceKey,
+        isConnected = inputs.deviceKey != null && inputs.connectionState == ActionCableService.ConnectionState.CONNECTED,
+        connectionState = inputs.connectionState,
+        isReceivingEnabled = inputs.isReceivingEnabled,
+        isSendingEnabled = inputs.isSendingEnabled,
+        isAutoConnecting = inputs.isAutoConnecting,
+        isReconnecting = isReconnecting,
+        connectionStatusText = statusText
+    )
+}
