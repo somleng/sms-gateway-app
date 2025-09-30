@@ -232,6 +232,31 @@ class ActionCableService(private val context: Context) {
     }
 
     /**
+     * Forwards the given SMS details to the ActionCable server.
+     */
+    fun forwardSmsToServer(from: String, to: String, body: String) {
+        Log.d(TAG, "Forwarding SMS to server: From: $from, To: $to, Body: $body")
+        try {
+            if (messageSubscription == null) {
+                Log.e(TAG, "Cannot forward SMS, messageSubscription is null. Is ActionCable connected?")
+                return
+            }
+
+            val smsData = JsonObject().apply {
+                addProperty("from", from)
+                addProperty("to", to)
+                addProperty("body", body)
+            }
+
+            messageSubscription?.perform("received", smsData)
+            Log.d(TAG, "Successfully performed 'received' action with SMS data.")
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Error forwarding SMS to server", e)
+        }
+    }
+
+    /**
      * Safely extract string value from JsonElement, handling null values
      */
     private fun JsonElement?.safeAsString(): String? {
