@@ -13,7 +13,6 @@ import org.somleng.sms_gateway_app.services.ActionCableService
 
 class SmsReceiver : BroadcastReceiver() {
     private val TAG = "SmsReceiver"
-    // Using Dispatchers.IO for network operations that might be triggered by ActionCableService
     private val coroutineScope = CoroutineScope(Dispatchers.IO)
 
     override fun onReceive(context: Context, intent: Intent) {
@@ -24,11 +23,7 @@ class SmsReceiver : BroadcastReceiver() {
                 val from = smsMessage.originatingAddress
                 val body = smsMessage.messageBody
 
-                // The 'to' address is this device's phone number which received the SMS.
-                // Programmatically obtaining it can be complex.
-                // Using a placeholder. The server identifies the device via X-Device-Key.
-                // If your server specifically needs the MSISDN of the receiving SIM for the 'to' field,
-                // this placeholder should be replaced with the actual number.
+                // TODO: Figure out how to get the phone number from sim card
                 val devicePhoneNumberPlaceholder = "this_device_number"
 
                 if (from != null && body != null) {
@@ -39,11 +34,6 @@ class SmsReceiver : BroadcastReceiver() {
                             val appContext = context.applicationContext
                             val actionCableService = ActionCableService(appContext)
 
-                            // Forward the SMS.
-                            // Note: For this to work, ActionCableService must be connected to the server.
-                            // The forwardSmsToServer method internally checks if messageSubscription is available.
-                            // Consider a more robust way to manage ActionCableService's lifecycle and connection state,
-                            // e.g., using a singleton or an Android Service that the app keeps connected.
                             actionCableService.forwardSmsToServer(from, devicePhoneNumberPlaceholder, body)
                             Log.d(TAG, "Attempted to forward SMS from $from to ActionCableService.")
                         } catch (e: Exception) {
