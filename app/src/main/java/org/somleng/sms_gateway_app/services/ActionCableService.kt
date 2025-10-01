@@ -13,13 +13,17 @@ import com.hosopy.actioncable.Subscription
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.runBlocking
 import java.net.URI
+import org.somleng.sms_gateway_app.data.preferences.AppSettingsDataStore
 
 class ActionCableService(private val context: Context) {
 
     private val smsManager: SmsManager by lazy {
         context.getSystemService<SmsManager>() ?: SmsManager.getDefault()
     }
+
+    private val appSettingsDataStore = AppSettingsDataStore(context)
 
     private val _connectionState = MutableStateFlow(ConnectionState.DISCONNECTED)
     val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
@@ -81,6 +85,11 @@ class ActionCableService(private val context: Context) {
     fun forwardSmsToServer(from: String, to: String, body: String) {
         if (messageSubscription == null) {
             Log.w(TAG, "Cannot forward SMS; not connected to ActionCable")
+            return
+        }
+
+        if (!runBlocking { appSettingsDataStore.isReceivingEnabled() }) {
+            Log.i(TAG, "Receiving disabled; skipping forwarding SMS from $from to Somleng.")
             return
         }
 
@@ -164,6 +173,12 @@ class ActionCableService(private val context: Context) {
             return
         }
 
+        if (!runBlocking { appSettingsDataStore.isSendingEnabled() }) {
+            Log.i(TAG, "Sending disabled; reporting failure for message ${messageId ?: "<no-id>"} without dispatching SMS.")
+            sendDeliveryStatus(messageId, DELIVERY_STATUS_FAILED, SENDING_DISABLED_MESSAGE)
+            return
+        }
+
         sendSms(phoneNumber, body, messageId)
     }
 
@@ -171,10 +186,10 @@ class ActionCableService(private val context: Context) {
         runCatching {
             smsManager.sendTextMessage(phoneNumber, null, messageBody, null, null)
             Log.d(TAG, "SMS sent to $phoneNumber")
-            sendDeliveryStatus(messageId, "sent")
+            sendDeliveryStatus(messageId, DELIVERY_STATUS_SENT)
         }.onFailure { error ->
             Log.e(TAG, "Error sending SMS to $phoneNumber", error)
-            sendDeliveryStatus(messageId, "failed", error.message ?: "Unknown error")
+            sendDeliveryStatus(messageId, DELIVERY_STATUS_FAILED, error.message ?: "Unknown error")
         }
     }
 
@@ -214,5 +229,8 @@ class ActionCableService(private val context: Context) {
         private const val HEADER_DEVICE_KEY = "X-Device-Key"
         private const val HEADER_USER_AGENT = "User-Agent"
         private val SOMLENG_URI: URI = URI("wss://app.somleng.org/cable")
+        private const val DELIVERY_STATUS_SENT = "sent"
+        private const val DELIVERY_STATUS_FAILED = "failed"
+        private const val SENDING_DISABLED_MESSAGE = "Sending disabled by user"
     }
 }

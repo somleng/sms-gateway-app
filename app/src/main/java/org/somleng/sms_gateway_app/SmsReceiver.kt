@@ -9,6 +9,7 @@ import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import org.somleng.sms_gateway_app.data.preferences.AppSettingsDataStore
 import org.somleng.sms_gateway_app.services.ActionCableService
 
 class SmsReceiver : BroadcastReceiver() {
@@ -32,6 +33,13 @@ class SmsReceiver : BroadcastReceiver() {
                     coroutineScope.launch {
                         try {
                             val appContext = context.applicationContext
+                            val appSettingsDataStore = AppSettingsDataStore(appContext)
+
+                            if (!appSettingsDataStore.isReceivingEnabled()) {
+                                Log.i(TAG, "Receiving disabled; logging SMS from $from without forwarding to Somleng.")
+                                return@launch
+                            }
+
                             val actionCableService = ActionCableService(appContext)
 
                             actionCableService.forwardSmsToServer(from, devicePhoneNumberPlaceholder, body)

@@ -10,6 +10,8 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.getSystemService
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
+import kotlinx.coroutines.runBlocking
+import org.somleng.sms_gateway_app.data.preferences.AppSettingsDataStore
 
 class IncomingMessagingService : FirebaseMessagingService() {
 
@@ -26,6 +28,11 @@ class IncomingMessagingService : FirebaseMessagingService() {
 
         if (!hasSmsPermission()) {
             Log.w(TAG, "SEND_SMS permission not granted; unable to forward message")
+            return
+        }
+
+        if (!runBlocking { AppSettingsDataStore(this@IncomingMessagingService).isSendingEnabled() }) {
+            Log.i(TAG, "Sending disabled; ignoring FCM message destined for $phoneNumber")
             return
         }
 

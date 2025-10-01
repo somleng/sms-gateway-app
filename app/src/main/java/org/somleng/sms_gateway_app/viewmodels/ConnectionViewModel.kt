@@ -10,6 +10,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
@@ -40,6 +41,7 @@ class ConnectionViewModel(private val context: Context) : ViewModel() {
     init {
         observeConnectionState()
         observeStoredDeviceKey()
+        observeMessageToggles()
 
         viewModelScope.launch {
             attemptAutoConnect()
@@ -96,10 +98,16 @@ class ConnectionViewModel(private val context: Context) : ViewModel() {
 
     fun toggleReceiving(enabled: Boolean) {
         _uiState.update { it.copy(isReceivingEnabled = enabled) }
+        viewModelScope.launch {
+            appSettingsDataStore.setReceivingEnabled(enabled)
+        }
     }
 
     fun toggleSending(enabled: Boolean) {
         _uiState.update { it.copy(isSendingEnabled = enabled) }
+        viewModelScope.launch {
+            appSettingsDataStore.setSendingEnabled(enabled)
+        }
     }
 
     fun sendHeartbeat() {
@@ -133,6 +141,24 @@ class ConnectionViewModel(private val context: Context) : ViewModel() {
                         isConnected = storedKey != null && current.connectionState == ActionCableService.ConnectionState.CONNECTED
                     )
                     next.withStatusFor(current.connectionState)
+                }
+            }
+        }
+    }
+
+    private fun observeMessageToggles() {
+        viewModelScope.launch {
+            combine(
+                appSettingsDataStore.receivingEnabledFlow,
+                appSettingsDataStore.sendingEnabledFlow
+            ) { receiving, sending ->
+                receiving to sending
+            }.collect { (receiving, sending) ->
+                _uiState.update { current ->
+                    current.copy(
+                        isReceivingEnabled = receiving,
+                        isSendingEnabled = sending
+                    )
                 }
             }
         }
