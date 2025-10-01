@@ -46,7 +46,6 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.launch
 import org.somleng.sms_gateway_app.ui.theme.SMSGatewayAppTheme
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.TextButton
@@ -224,52 +223,17 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun SMSGatewayScreen(modifier: Modifier = Modifier) {
     val context = LocalContext.current
-    val connectionViewModel = remember { ConnectionViewModel(context) }
-    val lifecycleOwner = LocalLifecycleOwner.current
+    val connectionViewModel = remember { ConnectionViewModel(context.applicationContext) }
 
-    DisposableEffect(lifecycleOwner, connectionViewModel) {
-        val lifecycle = lifecycleOwner.lifecycle
+    ObserveConnectionLifecycle(connectionViewModel)
 
-        if (lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
-            connectionViewModel.onAppForegrounded()
-        }
+    val uiState by connectionViewModel.uiState.collectAsState()
 
-        val observer = LifecycleEventObserver { _, event ->
-            when (event) {
-                Lifecycle.Event.ON_START -> connectionViewModel.onAppForegrounded()
-                Lifecycle.Event.ON_STOP -> connectionViewModel.onAppBackgrounded()
-                else -> Unit
-            }
-        }
+    var deviceKeyInput by remember { mutableStateOf(uiState.deviceKey.orEmpty()) }
 
-        lifecycle.addObserver(observer)
-
-        onDispose {
-            lifecycle.removeObserver(observer)
-        }
-    }
-
-    // Collect connection state
-    val connectionState by connectionViewModel.connectionState.collectAsState(
-        initial = ConnectionUiState()
-    )
-
-    // Local state for device key input
-    var deviceKeyInput by remember { mutableStateOf("") }
-
-    // Update device key input when stored device key changes
-    LaunchedEffect(
-        connectionState.deviceKey,
-        connectionState.isAutoConnecting,
-        connectionState.isReconnecting
-    ) {
-        // Only update input field when not auto-connecting (when user is actually on device key screen)
-        if (!connectionState.isAutoConnecting && !connectionState.isReconnecting) {
-            connectionState.deviceKey?.let { deviceKey ->
-                deviceKeyInput = deviceKey
-            } ?: run {
-                deviceKeyInput = ""
-            }
+    LaunchedEffect(uiState.deviceKey, uiState.isAutoConnecting, uiState.isReconnecting) {
+        if (!uiState.isAutoConnecting && !uiState.isReconnecting) {
+            deviceKeyInput = uiState.deviceKey.orEmpty()
         }
     }
 
@@ -296,19 +260,19 @@ fun SMSGatewayScreen(modifier: Modifier = Modifier) {
             )
 
             when {
-                connectionState.isConnected -> {
+                uiState.isConnected -> {
                     ConnectedScreen(
-                        isReceivingEnabled = connectionState.isReceivingEnabled,
+                        isReceivingEnabled = uiState.isReceivingEnabled,
                         onReceivingChange = { connectionViewModel.toggleReceiving(it) },
-                        isSendingEnabled = connectionState.isSendingEnabled,
+                        isSendingEnabled = uiState.isSendingEnabled,
                         onSendingChange = { connectionViewModel.toggleSending(it) },
                         onDisconnectClick = { connectionViewModel.disconnect() },
-                        connectionStatus = connectionState.connectionStatusText
+                        connectionStatus = uiState.connectionStatusText
                     )
                 }
-                connectionState.isAutoConnecting || connectionState.isReconnecting -> {
+                uiState.isAutoConnecting || uiState.isReconnecting -> {
                     AutoConnectingScreen(
-                        connectionStatus = connectionState.connectionStatusText
+                        connectionStatus = uiState.connectionStatusText
                     )
                 }
                 else -> {
@@ -320,8 +284,8 @@ fun SMSGatewayScreen(modifier: Modifier = Modifier) {
                                 connectionViewModel.connect(deviceKeyInput)
                             }
                         },
-                        connectionStatus = connectionState.connectionStatusText,
-                        isConnecting = connectionState.connectionState == ActionCableService.ConnectionState.CONNECTING
+                        connectionStatus = uiState.connectionStatusText,
+                        isConnecting = uiState.connectionState == ActionCableService.ConnectionState.CONNECTING
                     )
                 }
             }
@@ -345,6 +309,33 @@ fun SMSGatewayScreen(modifier: Modifier = Modifier) {
                 style = MaterialTheme.typography.bodySmall,
                 textAlign = TextAlign.Center
             )
+        }
+    }
+}
+
+@Composable
+private fun ObserveConnectionLifecycle(connectionViewModel: ConnectionViewModel) {
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    DisposableEffect(lifecycleOwner, connectionViewModel) {
+        val lifecycle = lifecycleOwner.lifecycle
+
+        if (lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
+            connectionViewModel.onAppForegrounded()
+        }
+
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_START -> connectionViewModel.onAppForegrounded()
+                Lifecycle.Event.ON_STOP -> connectionViewModel.onAppBackgrounded()
+                else -> Unit
+            }
+        }
+
+        lifecycle.addObserver(observer)
+
+        onDispose {
+            lifecycle.removeObserver(observer)
         }
     }
 }
