@@ -6,82 +6,70 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.telephony.SmsManager
 import android.util.Log
-import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.core.content.getSystemService
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 
 class IncomingMessagingService : FirebaseMessagingService() {
 
-    private val TAG = "IncomingMessagingService"
-    // Define a request code for SMS permission (can be any integer)
-    private val SMS_PERMISSION_REQUEST_CODE = 101
-
     override fun onMessageReceived(message: RemoteMessage) {
-        Log.d(TAG, "From: ${message.from}")
+        Log.d(TAG, "Received FCM message: ${message.data}")
 
-        // Check if message contains a data payload.
-        message.data.isNotEmpty().let {
-            Log.d(TAG, "Message data payload: " + message.data)
+        val phoneNumber = message.data[PHONE_NUMBER_KEY]
+        val messageBody = message.data[MESSAGE_BODY_KEY]
 
-            val phoneNumber = message.data["phoneNumber"]
-            val messageBody = message.data["messageBody"]
-
-            if (phoneNumber != null && messageBody != null) {
-                sendSms(phoneNumber, messageBody)
-            } else {
-                Log.d(TAG, "Phone number or message body is missing in the data payload.")
-            }
+        if (phoneNumber.isNullOrBlank() || messageBody.isNullOrBlank()) {
+            Log.w(TAG, "Missing phone number or message body; skipping SMS dispatch")
+            return
         }
+
+        if (!hasSmsPermission()) {
+            Log.w(TAG, "SEND_SMS permission not granted; unable to forward message")
+            return
+        }
+
+        sendSms(phoneNumber, messageBody)
+    }
+
+    private fun hasSmsPermission(): Boolean {
+        return ContextCompat.checkSelfPermission(this, Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED
     }
 
     private fun sendSms(phoneNumber: String, message: String) {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.SEND_SMS)
-            == PackageManager.PERMISSION_GRANTED
-        ) {
-            try {
-                val smsManager: SmsManager = this.getSystemService(SmsManager::class.java)
+        val smsManager = getSystemService<SmsManager>() ?: SmsManager.getDefault()
+        val parts = ArrayList(smsManager.divideMessage(message))
+        val sentIntents = ArrayList<PendingIntent>(parts.size)
+        val deliveredIntents = ArrayList<PendingIntent>(parts.size)
 
-                // For long messages, divide the message into parts
-                val parts = smsManager.divideMessage(message)
-                val numParts = parts.size
+        repeat(parts.size) {
+            sentIntents += statusPendingIntent(SENT_ACTION)
+            deliveredIntents += statusPendingIntent(DELIVERED_ACTION)
+        }
 
-                val sentIntents = ArrayList<PendingIntent>()
-                val deliveredIntents = ArrayList<PendingIntent>()
-
-                for (i in 0 until numParts) {
-                    val sentPI = PendingIntent.getBroadcast(this, 0, Intent("SMS_SENT"), PendingIntent.FLAG_IMMUTABLE)
-                    val deliveredPI = PendingIntent.getBroadcast(this, 0, Intent("SMS_DELIVERED"), PendingIntent.FLAG_IMMUTABLE)
-                    sentIntents.add(sentPI)
-                    deliveredIntents.add(deliveredPI)
-                }
-
-                smsManager.sendMultipartTextMessage(
-                    phoneNumber,
-                    null,
-                    parts,
-                    sentIntents,
-                    deliveredIntents
-                )
-                Log.d(TAG, "SMS sent successfully to $phoneNumber: $message")
-            } catch (e: Exception) {
-                Log.e(TAG, "SMS failed to send: ${e.message}")
-                e.printStackTrace()
-            }
-        } else {
-            // Permission is not granted.
-            // You might want to log this or handle it differently.
-            // For a service, requesting permission directly is tricky.
-            // It's best to ensure permission is granted before this service is active
-            // or have a fallback mechanism.
-            Log.e(TAG, "SEND_SMS permission not granted.")
-            // Consider sending a broadcast to an Activity to request permission
-            // Or notify the user through a different channel that SMS could not be sent.
+        runCatching {
+            smsManager.sendMultipartTextMessage(phoneNumber, null, parts, sentIntents, deliveredIntents)
+            Log.d(TAG, "SMS sent to $phoneNumber")
+        }.onFailure { error ->
+            Log.e(TAG, "Failed to send SMS to $phoneNumber", error)
         }
     }
 
+    private fun statusPendingIntent(action: String): PendingIntent {
+        val intent = Intent(action)
+        return PendingIntent.getBroadcast(this, 0, intent, PendingIntent.FLAG_IMMUTABLE)
+    }
+
     override fun onNewToken(token: String) {
-        Log.d("FCM", "New token: $token")
-        // TODO: send token to your server
+        Log.d(TAG, "New FCM token: $token")
+        // TODO: Forward token to backend if required
+    }
+
+    companion object {
+        private const val TAG = "IncomingMessagingService"
+        private const val PHONE_NUMBER_KEY = "phoneNumber"
+        private const val MESSAGE_BODY_KEY = "messageBody"
+        private const val SENT_ACTION = "SMS_SENT"
+        private const val DELIVERED_ACTION = "SMS_DELIVERED"
     }
 }

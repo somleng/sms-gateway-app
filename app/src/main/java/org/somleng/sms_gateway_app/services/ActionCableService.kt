@@ -3,6 +3,7 @@ package org.somleng.sms_gateway_app.services
 import android.content.Context
 import android.telephony.SmsManager
 import android.util.Log
+import androidx.core.content.getSystemService
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.hosopy.actioncable.ActionCable
@@ -13,22 +14,19 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.net.URI
-import java.util.HashMap
 
 class ActionCableService(private val context: Context) {
-    private val TAG = "ActionCableService"
 
-    // Connection state management
+    private val smsManager: SmsManager by lazy {
+        context.getSystemService<SmsManager>() ?: SmsManager.getDefault()
+    }
+
     private val _connectionState = MutableStateFlow(ConnectionState.DISCONNECTED)
     val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
 
     private var consumer: Consumer? = null
     private var connectionSubscription: Subscription? = null
     private var messageSubscription: Subscription? = null
-    private var deviceToken: String? = null
-
-    // SMS permissions check
-    private val smsManager = SmsManager.getDefault()
 
     enum class ConnectionState {
         CONNECTING,
@@ -37,229 +35,184 @@ class ActionCableService(private val context: Context) {
         ERROR
     }
 
-    /**
-     * Connect to the Somleng ActionCable server using device token
-     */
     suspend fun connect(deviceToken: String) {
-        try {
-            Log.d(TAG, "Connecting to ActionCable with device token")
-            this.deviceToken = deviceToken
+        if (deviceToken.isBlank()) {
+            Log.w(TAG, "Cannot connect without a device token")
+            _connectionState.value = ConnectionState.ERROR
+            return
+        }
+
+        runCatching {
+            tearDownConnection()
+
             _connectionState.value = ConnectionState.CONNECTING
 
-            // Create WebSocket URI for Somleng server
-            val uri = URI("wss://app.somleng.org/cable")
-            Log.d(TAG, "Connecting to WebSocket URI: $uri")
+            val consumer = createConsumer(deviceToken).also { this.consumer = it }
+            connectionSubscription = subscribeToConnectionEvents(consumer)
+            messageSubscription = subscribeToMessageEvents(consumer)
 
-            // Configure consumer options
-            val options = Consumer.Options().apply {
-                reconnection = true
-                reconnectionMaxAttempts = 5
-
-                // Authentication using X-Device-Key header
-                val headers = HashMap<String, String>()
-                headers["X-Device-Key"] = deviceToken
-                headers["User-Agent"] = "SomlengSMSGatewayApp/1.0"
-                this.headers = headers
-
-                Log.d(TAG, "ActionCable headers configured")
-            }
-
-            // Create consumer
-            consumer = ActionCable.createConsumer(uri, options)
-
-            // Create channel subscription
-            val connectionChannel = Channel("SMSGatewayConnectionChannel")
-            Log.d(TAG, "Creating subscription to channel: SMSGatewayConnectionChannel")
-
-            // Create subscription with callbacks
-            connectionSubscription = consumer?.subscriptions?.create(connectionChannel)?.apply {
-                onConnected {
-                    Log.d(TAG, "ActionCable connected successfully")
-                    _connectionState.value = ConnectionState.CONNECTED
-                }
-
-                onRejected {
-                    Log.e(TAG, "ActionCable subscription rejected")
-                    _connectionState.value = ConnectionState.ERROR
-                }
-
-                onDisconnected {
-                    Log.d(TAG, "ActionCable disconnected")
-                    _connectionState.value = ConnectionState.DISCONNECTED
-                }
-
-                onFailed { exception ->
-                    Log.e(TAG, "ActionCable connection failed", exception)
-                    _connectionState.value = ConnectionState.ERROR
-                }
-            }
-
-            val messageChannel = Channel("SMSMessageChannel")
-            Log.d(TAG, "Creating subscription to channel: SMSMessageChannel")
-
-            // Create subscription with callbacks
-            messageSubscription = consumer?.subscriptions?.create(messageChannel)?.apply {
-                onReceived { data ->
-                    Log.d(TAG, "Received message from server: $data")
-                    handleIncomingMessage(data)
-                }
-            }
-
-
-            // Establish connection
-            Log.d(TAG, "Connecting to ActionCable...")
-            consumer?.connect()
-
-        } catch (e: Exception) {
-            Log.e(TAG, "Error connecting to ActionCable", e)
+            Log.d(TAG, "Connecting to ActionCable with device token")
+            consumer.connect()
+        }.onFailure { error ->
+            Log.e(TAG, "Error connecting to ActionCable", error)
             _connectionState.value = ConnectionState.ERROR
         }
     }
 
-    /**
-     * Disconnect from ActionCable server
-     */
     fun disconnect() {
         Log.d(TAG, "Disconnecting from ActionCable")
+        tearDownConnection()
+        _connectionState.value = ConnectionState.DISCONNECTED
+    }
+
+    fun sendHeartbeat() {
+        runCatching {
+            connectionSubscription?.perform("ping")
+            Log.d(TAG, "Sent heartbeat")
+        }.onFailure { error ->
+            Log.e(TAG, "Error sending heartbeat", error)
+        }
+    }
+
+    fun isConnected(): Boolean {
+        return _connectionState.value == ConnectionState.CONNECTED
+    }
+
+    fun forwardSmsToServer(from: String, to: String, body: String) {
+        if (messageSubscription == null) {
+            Log.w(TAG, "Cannot forward SMS; not connected to ActionCable")
+            return
+        }
+
+        val payload = JsonObject().apply {
+            addProperty("from", from)
+            addProperty("to", to)
+            addProperty("body", body)
+        }
+
+        runCatching {
+            messageSubscription?.perform("received", payload)
+            Log.d(TAG, "Forwarded SMS to server (from=$from)")
+        }.onFailure { error ->
+            Log.e(TAG, "Error forwarding SMS to server", error)
+        }
+    }
+
+    private fun createConsumer(deviceToken: String): Consumer {
+        val options = Consumer.Options().apply {
+            reconnection = true
+            reconnectionMaxAttempts = 5
+            headers = mapOf(
+                HEADER_DEVICE_KEY to deviceToken,
+                HEADER_USER_AGENT to USER_AGENT
+            )
+        }
+
+        return ActionCable.createConsumer(SOMLENG_URI, options)
+    }
+
+    private fun subscribeToConnectionEvents(consumer: Consumer): Subscription {
+        val channel = Channel(CONNECTION_CHANNEL)
+
+        return consumer.subscriptions.create(channel).apply {
+            onConnected {
+                Log.d(TAG, "ActionCable connected successfully")
+                _connectionState.value = ConnectionState.CONNECTED
+            }
+
+            onRejected {
+                Log.e(TAG, "ActionCable subscription rejected")
+                _connectionState.value = ConnectionState.ERROR
+            }
+
+            onDisconnected {
+                Log.d(TAG, "ActionCable disconnected")
+                _connectionState.value = ConnectionState.DISCONNECTED
+            }
+
+            onFailed { error ->
+                Log.e(TAG, "ActionCable connection failed", error)
+                _connectionState.value = ConnectionState.ERROR
+            }
+        }
+    }
+
+    private fun subscribeToMessageEvents(consumer: Consumer): Subscription {
+        val channel = Channel(MESSAGE_CHANNEL)
+
+        return consumer.subscriptions.create(channel).apply {
+            onReceived { data ->
+                Log.d(TAG, "Received message from server: $data")
+                handleIncomingMessage(data)
+            }
+        }
+    }
+
+    private fun handleIncomingMessage(data: JsonElement) {
+        val payload = runCatching { data.asJsonObject }.getOrNull()
+        if (payload == null) {
+            Log.w(TAG, "Ignoring message; payload is not JSON object: $data")
+            return
+        }
+
+        val messageId = payload["id"].safeAsString()
+        val phoneNumber = payload["to"].safeAsString()
+        val body = payload["body"].safeAsString()
+
+        if (phoneNumber.isNullOrBlank() || body.isNullOrBlank()) {
+            Log.w(TAG, "Missing SMS details in payload: $payload")
+            return
+        }
+
+        sendSms(phoneNumber, body, messageId)
+    }
+
+    private fun sendSms(phoneNumber: String, messageBody: String, messageId: String?) {
+        runCatching {
+            smsManager.sendTextMessage(phoneNumber, null, messageBody, null, null)
+            Log.d(TAG, "SMS sent to $phoneNumber")
+            sendDeliveryStatus(messageId, "sent")
+        }.onFailure { error ->
+            Log.e(TAG, "Error sending SMS to $phoneNumber", error)
+            sendDeliveryStatus(messageId, "failed", error.message ?: "Unknown error")
+        }
+    }
+
+    private fun sendDeliveryStatus(messageId: String?, status: String, message: String? = null) {
+        if (messageId == null) return
+
+        val payload = JsonObject().apply {
+            addProperty("id", messageId)
+            addProperty("status", status)
+            message?.let { addProperty("error", it) }
+        }
+
+        runCatching {
+            messageSubscription?.perform("sent", payload)
+            Log.d(TAG, "Reported delivery status '$status' for message $messageId")
+        }.onFailure { error ->
+            Log.e(TAG, "Error sending delivery status", error)
+        }
+    }
+
+    private fun tearDownConnection() {
         connectionSubscription = null
         messageSubscription = null
         consumer?.disconnect()
         consumer = null
-        _connectionState.value = ConnectionState.DISCONNECTED
     }
 
-    /**
-     * Handle incoming messages from ActionCable
-     */
-    private fun handleIncomingMessage(data: JsonElement) {
-        try {
-            val jsonObject = data.asJsonObject
-
-            // Extract message details
-            val messageId = jsonObject.get("id")?.asString
-            val channel = jsonObject.get("channel").safeAsString()
-            val fromNumber = jsonObject.get("from")?.asString
-            val phoneNumber = jsonObject.get("to")?.asString
-            val messageBody = jsonObject.get("body")?.asString
-
-            Log.d(TAG, "MessageId: $messageId, Channel: $channel, From: $fromNumber, To: $phoneNumber, Body: $messageBody")
-
-            if (phoneNumber != null && messageBody != null) {
-                sendSms(phoneNumber, messageBody, messageId)
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error handling incoming message", e)
-        }
-    }
-
-    /**
-     * Send SMS message
-     */
-    private fun sendSms(phoneNumber: String, messageBody: String, messageId: String?) {
-        try {
-            Log.d(TAG, "Sending SMS to $phoneNumber: $messageBody")
-
-            // Send the SMS
-            smsManager.sendTextMessage(
-                phoneNumber,
-                null,
-                messageBody,
-                null, // sentIntent - could add delivery confirmation
-                null  // deliveryIntent - could add delivery confirmation
-            )
-
-            Log.d(TAG, "SMS sent successfully to $phoneNumber")
-
-            // Send delivery status back to server
-            sendDeliveryStatus(messageId, "sent", "SMS sent successfully")
-
-        } catch (e: Exception) {
-            Log.e(TAG, "Error sending SMS to $phoneNumber", e)
-            sendDeliveryStatus(messageId, "failed", e.message ?: "Unknown error")
-        }
-    }
-
-    /**
-     * Send delivery status back to server
-     */
-    private fun sendDeliveryStatus(messageId: String?, status: String, message: String) {
-        try {
-            if (messageId == null) return
-
-            val statusData = JsonObject().apply {
-                addProperty("id", messageId)
-                addProperty("status", status)
-            }
-
-            messageSubscription?.perform("sent", statusData)
-            Log.d(TAG, "Sent delivery status: $status for message $messageId")
-
-        } catch (e: Exception) {
-            Log.e(TAG, "Error sending delivery status", e)
-        }
-    }
-
-    /**
-     * Send heartbeat to server (can be called periodically)
-     */
-    fun sendHeartbeat() {
-        try {
-            connectionSubscription?.perform("ping")
-            Log.d(TAG, "Sent heartbeat")
-
-        } catch (e: Exception) {
-            Log.e(TAG, "Error sending heartbeat", e)
-        }
-    }
-
-    /**
-     * Check if currently connected
-     */
-    fun isConnected(): Boolean {
-        return _connectionState.value == ConnectionState.CONNECTED && consumer != null
-    }
-
-    /**
-     * Get current connection status
-     */
-    fun getConnectionStatus(): String {
-        return when (_connectionState.value) {
-            ConnectionState.CONNECTING -> "Connecting..."
-            ConnectionState.CONNECTED -> "Connected"
-            ConnectionState.DISCONNECTED -> "Disconnected"
-            ConnectionState.ERROR -> "Error"
-        }
-    }
-
-    /**
-     * Forwards the given SMS details to the ActionCable server.
-     */
-    fun forwardSmsToServer(from: String, to: String, body: String) {
-        Log.d(TAG, "Forwarding SMS to server: From: $from, To: $to, Body: $body")
-        try {
-            if (messageSubscription == null) {
-                Log.e(TAG, "Cannot forward SMS, messageSubscription is null. Is ActionCable connected?")
-                return
-            }
-
-            val smsData = JsonObject().apply {
-                addProperty("from", from)
-                addProperty("to", to)
-                addProperty("body", body)
-            }
-
-            messageSubscription?.perform("received", smsData)
-            Log.d(TAG, "Successfully performed 'received' action with SMS data.")
-
-        } catch (e: Exception) {
-            Log.e(TAG, "Error forwarding SMS to server", e)
-        }
-    }
-
-    /**
-     * Safely extract string value from JsonElement, handling null values
-     */
     private fun JsonElement?.safeAsString(): String? {
-        return if (this == null || this.isJsonNull) null else this.asString
+        return if (this == null || this.isJsonNull) null else runCatching { this.asString }.getOrNull()
+    }
+
+    companion object {
+        private const val TAG = "ActionCableService"
+        private const val USER_AGENT = "SomlengSMSGatewayApp/1.0"
+        private const val CONNECTION_CHANNEL = "SMSGatewayConnectionChannel"
+        private const val MESSAGE_CHANNEL = "SMSMessageChannel"
+        private const val HEADER_DEVICE_KEY = "X-Device-Key"
+        private const val HEADER_USER_AGENT = "User-Agent"
+        private val SOMLENG_URI: URI = URI("wss://app.somleng.org/cable")
     }
 }
