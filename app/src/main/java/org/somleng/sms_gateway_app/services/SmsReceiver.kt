@@ -1,16 +1,14 @@
-package org.somleng.sms_gateway_app
+package org.somleng.sms_gateway_app.services
 
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.provider.Telephony
-import android.telephony.SmsMessage
 import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import org.somleng.sms_gateway_app.data.preferences.AppSettingsDataStore
-import org.somleng.sms_gateway_app.services.ActionCableService
 
 class SmsReceiver : BroadcastReceiver() {
     private val TAG = "SmsReceiver"

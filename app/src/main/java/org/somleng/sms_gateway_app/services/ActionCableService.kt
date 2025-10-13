@@ -109,6 +109,14 @@ class ActionCableService(private val context: Context) {
         }
     }
 
+    fun sendMessage(messageId: String?) {
+        val data = JsonObject().apply {
+            addProperty("id", messageId)
+        }
+
+        messageSubscription?.perform("message_send_requested", data)
+    }
+
     private fun createConsumer(deviceKey: String, deviceToken: String): Consumer {
         val options = Consumer.Options().apply {
             reconnection = true
@@ -161,15 +169,11 @@ class ActionCableService(private val context: Context) {
                 }
 
                 val messgeType = payload["type"].safeAsString()
-                if (messgeType == "new_outbound_message") {
+                if (messgeType == "message_send_request") {
                     val messageId = payload["message_id"].safeAsString()
 
                     Log.d(TAG, "Received message from server: $data")
-                    val data = JsonObject().apply {
-                        addProperty("id", messageId)
-                    }
-
-                    messageSubscription?.perform("message_send_requested", data)
+                    sendMessage(messageId)
                 } else if (messgeType == "message_send_request_confirmed") {
                     Log.d(TAG, "Received message from server: $data")
                     handleIncomingMessage(data)
@@ -256,5 +260,15 @@ class ActionCableService(private val context: Context) {
         private const val DELIVERY_STATUS_SENT = "sent"
         private const val DELIVERY_STATUS_FAILED = "failed"
         private const val SENDING_DISABLED_MESSAGE = "Sending disabled by user"
+
+        private var instance: ActionCableService? = null
+
+        @Synchronized
+        fun getInstance(context: Context): ActionCableService {
+            if (instance == null) {
+                instance = ActionCableService(context.applicationContext)
+            }
+            return instance!!
+        }
     }
 }

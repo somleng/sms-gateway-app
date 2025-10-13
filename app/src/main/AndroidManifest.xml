@@ -36,7 +36,7 @@
     </activity>
 
     <service
-      android:name=".IncomingMessagingService"
+      android:name=".services.MessageSendRequestService"
       android:exported="false">
       <intent-filter>
         <action android:name="com.google.firebase.MESSAGING_EVENT" />
@@ -44,7 +44,7 @@
     </service>
 
     <receiver
-        android:name=".SmsReceiver"
+        android:name=".services.SmsReceiver"
         android:enabled="true"
         android:exported="true">
         <intent-filter android:priority="999">
