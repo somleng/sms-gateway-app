@@ -4,6 +4,7 @@ import android.content.Context
 import android.telephony.SmsManager
 import android.util.Log
 import androidx.core.content.getSystemService
+import com.google.firebase.messaging.FirebaseMessaging
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.hosopy.actioncable.ActionCable
@@ -39,27 +40,28 @@ class ActionCableService(private val context: Context) {
         ERROR
     }
 
-    suspend fun connect(deviceToken: String) {
-        if (deviceToken.isBlank()) {
-            Log.w(TAG, "Cannot connect without a device token")
-            _connectionState.value = ConnectionState.ERROR
-            return
-        }
+    suspend fun connect(deviceKey: String) {
+        FirebaseMessaging.getInstance().token.addOnSuccessListener { deviceToken ->
+            if (deviceToken.isNullOrBlank()) {
+                Log.w(TAG, "Device token is missing")
+                _connectionState.value = ConnectionState.ERROR
+                return@addOnSuccessListener
+            }
 
-        runCatching {
-            tearDownConnection()
+            runCatching {
+                tearDownConnection()
+                _connectionState.value = ConnectionState.CONNECTING
 
-            _connectionState.value = ConnectionState.CONNECTING
+                val consumer = createConsumer(deviceKey, deviceToken).also { this.consumer = it }
+                connectionSubscription = subscribeToConnectionEvents(consumer)
+                messageSubscription = subscribeToMessageEvents(consumer)
 
-            val consumer = createConsumer(deviceToken).also { this.consumer = it }
-            connectionSubscription = subscribeToConnectionEvents(consumer)
-            messageSubscription = subscribeToMessageEvents(consumer)
-
-            Log.d(TAG, "Connecting to ActionCable with device token")
-            consumer.connect()
-        }.onFailure { error ->
-            Log.e(TAG, "Error connecting to ActionCable", error)
-            _connectionState.value = ConnectionState.ERROR
+                Log.d(TAG, "Connecting to ActionCable with device token: $deviceToken")
+                consumer.connect()
+            }.onFailure { error ->
+                Log.e(TAG, "Error connecting to ActionCable", error)
+                _connectionState.value = ConnectionState.ERROR
+            }
         }
     }
 
@@ -107,12 +109,13 @@ class ActionCableService(private val context: Context) {
         }
     }
 
-    private fun createConsumer(deviceToken: String): Consumer {
+    private fun createConsumer(deviceKey: String, deviceToken: String): Consumer {
         val options = Consumer.Options().apply {
             reconnection = true
             reconnectionMaxAttempts = 5
             headers = mapOf(
-                HEADER_DEVICE_KEY to deviceToken,
+                HEADER_DEVICE_KEY to deviceKey,
+                HEADER_DEVICE_TOKEN to deviceToken,
                 HEADER_USER_AGENT to USER_AGENT
             )
         }
@@ -151,16 +154,34 @@ class ActionCableService(private val context: Context) {
 
         return consumer.subscriptions.create(channel).apply {
             onReceived { data ->
-                Log.d(TAG, "Received message from server: $data")
-                handleIncomingMessage(data)
+                val payload = runCatching { data.asJsonObject }.getOrNull()
+                if (payload == null) {
+                    Log.w(TAG, "Ignoring message; payload is not JSON object: $data")
+                    return@onReceived
+                }
+
+                val messgeType = payload["type"].safeAsString()
+                if (messgeType == "new_outbound_message") {
+                    val messageId = payload["message_id"].safeAsString()
+
+                    Log.d(TAG, "Received message from server: $data")
+                    val data = JsonObject().apply {
+                        addProperty("id", messageId)
+                    }
+
+                    messageSubscription?.perform("message_send_requested", data)
+                } else if (messgeType == "message_send_request_confirmed") {
+                    Log.d(TAG, "Received message from server: $data")
+                    handleIncomingMessage(data)
+                }
             }
         }
     }
 
     private fun handleIncomingMessage(data: JsonElement) {
-        val payload = runCatching { data.asJsonObject }.getOrNull()
+        val payload = runCatching { data.asJsonObject["message"].asJsonObject }.getOrNull()
         if (payload == null) {
-            Log.w(TAG, "Ignoring message; payload is not JSON object: $data")
+            Log.w(TAG, "Ignoring message; payload is not message data: $data")
             return
         }
 
@@ -227,8 +248,11 @@ class ActionCableService(private val context: Context) {
         private const val CONNECTION_CHANNEL = "SMSGatewayConnectionChannel"
         private const val MESSAGE_CHANNEL = "SMSMessageChannel"
         private const val HEADER_DEVICE_KEY = "X-Device-Key"
+        private const val HEADER_DEVICE_TOKEN = "X-Device-Token"
         private const val HEADER_USER_AGENT = "User-Agent"
-        private val SOMLENG_URI: URI = URI("wss://app.somleng.org/cable")
+        // Emulator ↔ host (10.0.2.2)
+        private val SOMLENG_URI: URI = URI("ws://10.0.2.2:8080/cable")
+//        private val SOMLENG_URI: URI = URI("wss://app.somleng.org/cable")
         private const val DELIVERY_STATUS_SENT = "sent"
         private const val DELIVERY_STATUS_FAILED = "failed"
         private const val SENDING_DISABLED_MESSAGE = "Sending disabled by user"
