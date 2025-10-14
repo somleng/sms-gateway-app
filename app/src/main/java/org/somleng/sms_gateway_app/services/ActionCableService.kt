@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.runBlocking
 import java.net.URI
+import org.somleng.sms_gateway_app.R
 import org.somleng.sms_gateway_app.data.preferences.AppSettingsDataStore
 
 class ActionCableService(private val context: Context) {
@@ -128,7 +129,15 @@ class ActionCableService(private val context: Context) {
             )
         }
 
-        return ActionCable.createConsumer(SOMLENG_URI, options)
+        val targetUri = resolveSomlengUri()
+        Log.d(TAG, "Using ActionCable endpoint: $targetUri")
+
+        return ActionCable.createConsumer(targetUri, options)
+    }
+
+    private fun resolveSomlengUri(): URI {
+        val url = context.getString(R.string.somleng_ws_url)
+        return URI(url)
     }
 
     private fun subscribeToConnectionEvents(consumer: Consumer): Subscription {
@@ -254,9 +263,6 @@ class ActionCableService(private val context: Context) {
         private const val HEADER_DEVICE_KEY = "X-Device-Key"
         private const val HEADER_DEVICE_TOKEN = "X-Device-Token"
         private const val HEADER_USER_AGENT = "User-Agent"
-        // Emulator ↔ host (10.0.2.2)
-        private val SOMLENG_URI: URI = URI("ws://10.0.2.2:8080/cable")
-//        private val SOMLENG_URI: URI = URI("wss://app.somleng.org/cable")
         private const val DELIVERY_STATUS_SENT = "sent"
         private const val DELIVERY_STATUS_FAILED = "failed"
         private const val SENDING_DISABLED_MESSAGE = "Sending disabled by user"
