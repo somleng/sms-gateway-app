@@ -9,6 +9,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -24,11 +25,13 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -36,33 +39,32 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import org.somleng.sms_gateway_app.ui.theme.SMSGatewayAppTheme
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.TextButton
 import androidx.core.content.ContextCompat
-import com.google.firebase.messaging.FirebaseMessaging
-import org.somleng.sms_gateway_app.data.preferences.AppSettingsDataStore
-import org.somleng.sms_gateway_app.services.ActionCableService
-import org.somleng.sms_gateway_app.viewmodels.ConnectionViewModel
-import org.somleng.sms_gateway_app.viewmodels.ConnectionUiState
-import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import com.google.firebase.messaging.FirebaseMessaging
+import org.somleng.sms_gateway_app.services.ActionCableService
+import org.somleng.sms_gateway_app.ui.theme.SMSGatewayAppTheme
+import org.somleng.sms_gateway_app.viewmodels.ConnectionUiState
+import org.somleng.sms_gateway_app.viewmodels.ConnectionViewModel
 
 class MainActivity : ComponentActivity() {
     companion object {
         private const val TAG = "MainActivity"
     }
+
+    private val connectionViewModel: ConnectionViewModel by viewModels()
 
     private val requestPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted: Boolean ->
@@ -162,8 +164,18 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             SMSGatewayAppTheme {
+                ObserveConnectionLifecycle(connectionViewModel)
+                val uiState by connectionViewModel.uiState.collectAsState()
+
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    SMSGatewayScreen(modifier = Modifier.padding(innerPadding))
+                    SMSGatewayScreen(
+                        uiState = uiState,
+                        onConnect = connectionViewModel::connect,
+                        onDisconnect = connectionViewModel::disconnect,
+                        onToggleReceiving = connectionViewModel::toggleReceiving,
+                        onToggleSending = connectionViewModel::toggleSending,
+                        modifier = Modifier.padding(innerPadding)
+                    )
 
                     if (showSmsPermissionRationaleDialog) {
                         SmsPermissionRationaleDialog(
@@ -221,15 +233,15 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun SMSGatewayScreen(modifier: Modifier = Modifier) {
-    val context = LocalContext.current
-    val connectionViewModel = remember { ConnectionViewModel(context.applicationContext) }
-
-    ObserveConnectionLifecycle(connectionViewModel)
-
-    val uiState by connectionViewModel.uiState.collectAsState()
-
-    var deviceKeyInput by remember { mutableStateOf(uiState.deviceKey.orEmpty()) }
+fun SMSGatewayScreen(
+    uiState: ConnectionUiState,
+    onConnect: (String) -> Unit,
+    onDisconnect: () -> Unit,
+    onToggleReceiving: (Boolean) -> Unit,
+    onToggleSending: (Boolean) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var deviceKeyInput by rememberSaveable { mutableStateOf(uiState.deviceKey.orEmpty()) }
 
     LaunchedEffect(uiState.deviceKey, uiState.isAutoConnecting, uiState.isReconnecting) {
         if (!uiState.isAutoConnecting && !uiState.isReconnecting) {
@@ -263,10 +275,10 @@ fun SMSGatewayScreen(modifier: Modifier = Modifier) {
                 uiState.isConnected -> {
                     ConnectedScreen(
                         isReceivingEnabled = uiState.isReceivingEnabled,
-                        onReceivingChange = { connectionViewModel.toggleReceiving(it) },
+                        onReceivingChange = onToggleReceiving,
                         isSendingEnabled = uiState.isSendingEnabled,
-                        onSendingChange = { connectionViewModel.toggleSending(it) },
-                        onDisconnectClick = { connectionViewModel.disconnect() },
+                        onSendingChange = onToggleSending,
+                        onDisconnectClick = onDisconnect,
                         connectionStatus = uiState.connectionStatusText
                     )
                 }
@@ -274,7 +286,7 @@ fun SMSGatewayScreen(modifier: Modifier = Modifier) {
                     AutoConnectingScreen(
                         connectionStatus = uiState.connectionStatusText,
                         showDisconnect = uiState.canDisconnect,
-                        onDisconnectClick = { connectionViewModel.disconnect() }
+                        onDisconnectClick = if (uiState.canDisconnect) onDisconnect else null
                     )
                 }
                 else -> {
@@ -283,11 +295,11 @@ fun SMSGatewayScreen(modifier: Modifier = Modifier) {
                         onDeviceKeyChange = { deviceKeyInput = it },
                         onConnectClick = {
                             if (deviceKeyInput.isNotBlank()) {
-                                connectionViewModel.connect(deviceKeyInput)
+                                onConnect(deviceKeyInput)
                             }
                         },
                         connectionStatus = uiState.connectionStatusText,
-                        isConnecting = uiState.connectionState == ActionCableService.ConnectionState.CONNECTING
+                        isConnecting = uiState.isConnecting
                     )
                 }
             }
@@ -562,10 +574,17 @@ fun SwitchOptionRow(
 
 @Preview(showBackground = true, name = "Disconnected State")
 @Composable
-fun GreetingPreview() {
+fun DisconnectedPreview() {
     SMSGatewayAppTheme {
         Scaffold { innerPadding ->
-            SMSGatewayScreen(modifier = Modifier.padding(innerPadding))
+            SMSGatewayScreen(
+                uiState = ConnectionUiState(),
+                onConnect = {},
+                onDisconnect = {},
+                onToggleReceiving = {},
+                onToggleSending = {},
+                modifier = Modifier.padding(innerPadding)
+            )
         }
     }
 }
@@ -575,39 +594,26 @@ fun GreetingPreview() {
 fun ConnectedScreenPreview() {
     SMSGatewayAppTheme {
         Scaffold { innerPadding ->
-            // For preview, we simulate the connected state directly
-            // DataStore won't work in Preview environment easily
             var isReceivingEnabled by remember { mutableStateOf(true) }
             var isSendingEnabled by remember { mutableStateOf(false) }
 
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding)
-                    .padding(16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Top
-            ) {
-                Image(
-                    painter = painterResource(id = R.drawable.somleng_logo),
-                    contentDescription = "Somleng Logo",
-                    modifier = Modifier
-                        .size(150.dp)
-                        .padding(bottom = 32.dp)
-                )
-                Text(
-                    text = "Somleng SMS Gateway",
-                    style = MaterialTheme.typography.headlineSmall,
-                    modifier = Modifier.padding(bottom = 16.dp)
-                )
-                ConnectedScreen(
-                    isReceivingEnabled = isReceivingEnabled,
-                    onReceivingChange = { isReceivingEnabled = it },
-                    isSendingEnabled = isSendingEnabled,
-                    onSendingChange = { isSendingEnabled = it },
-                    onDisconnectClick = { /* Simulate disconnect */ }
-                )
-            }
+            val previewState = ConnectionUiState(
+                deviceKey = "preview-device",
+                isConnected = true,
+                connectionState = ActionCableService.ConnectionState.CONNECTED,
+                isReceivingEnabled = isReceivingEnabled,
+                isSendingEnabled = isSendingEnabled,
+                connectionStatusText = "Connected to Somleng"
+            )
+
+            SMSGatewayScreen(
+                uiState = previewState,
+                onConnect = {},
+                onDisconnect = {},
+                onToggleReceiving = { isReceivingEnabled = it },
+                onToggleSending = { isSendingEnabled = it },
+                modifier = Modifier.padding(innerPadding)
+            )
         }
     }
 }

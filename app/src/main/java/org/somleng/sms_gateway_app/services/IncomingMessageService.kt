@@ -38,7 +38,7 @@ class IncomingMessageService : BroadcastReceiver() {
                                 return@launch
                             }
 
-                            val actionCableService = ActionCableService(appContext)
+                            val actionCableService = ActionCableService.getInstance(appContext)
 
                             actionCableService.forwardSmsToServer(from, devicePhoneNumberPlaceholder, body)
                             Log.d(TAG, "Attempted to forward SMS from $from to ActionCableService.")

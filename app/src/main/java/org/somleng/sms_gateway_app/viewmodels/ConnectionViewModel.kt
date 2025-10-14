@@ -1,10 +1,11 @@
 package org.somleng.sms_gateway_app.viewmodels
 
-import android.content.Context
+import android.app.Application
 import android.util.Log
-import androidx.lifecycle.ViewModel
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -18,10 +19,11 @@ import kotlinx.coroutines.launch
 import org.somleng.sms_gateway_app.data.preferences.AppSettingsDataStore
 import org.somleng.sms_gateway_app.services.ActionCableService
 
-class ConnectionViewModel(private val context: Context) : ViewModel() {
+class ConnectionViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val appSettingsDataStore = AppSettingsDataStore(context)
-    private val actionCableService = ActionCableService(context)
+    private val appContext = application.applicationContext
+    private val appSettingsDataStore = AppSettingsDataStore(appContext)
+    private val actionCableService = ActionCableService.getInstance(appContext)
 
     private val heartbeatIntervalMs = 30_000L
     private var heartbeatJob: Job? = null
@@ -30,6 +32,18 @@ class ConnectionViewModel(private val context: Context) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ConnectionUiState())
     val uiState: StateFlow<ConnectionUiState> = _uiState.asStateFlow()
+
+    private fun updateUiState(
+        state: ActionCableService.ConnectionState? = null,
+        transform: (ConnectionUiState) -> ConnectionUiState
+    ) {
+        _uiState.update { current ->
+            val baseline = state?.let { current.copy(connectionState = it) } ?: current
+            val updated = transform(baseline)
+            val effectiveState = state ?: updated.connectionState
+            updated.withStatusFor(effectiveState)
+        }
+    }
 
     private var reconnectJob: Job? = null
     private val reconnectBaseDelayMs = 3_000L
@@ -58,22 +72,23 @@ class ConnectionViewModel(private val context: Context) : ViewModel() {
 
         allowReconnectFromStoredKey = true
         viewModelScope.launch {
-            runCatching {
+            try {
                 appSettingsDataStore.saveDeviceKey(trimmedKey)
                 cancelReconnect()
 
-                _uiState.update { current ->
-                    val next = current.copy(
+                updateUiState(ActionCableService.ConnectionState.CONNECTING) { current ->
+                    current.copy(
                         deviceKey = trimmedKey,
                         isAutoConnecting = false,
                         isReconnecting = false,
-                        connectionState = ActionCableService.ConnectionState.CONNECTING
+                        isConnected = false
                     )
-                    next.withStatusFor(next.connectionState)
                 }
 
                 actionCableService.connect(trimmedKey)
-            }.onFailure { error ->
+            } catch (error: Exception) {
+                if (error is CancellationException) throw error
+                Log.e(TAG, "Connection failed", error)
                 updateStatus("Connection failed: ${error.message ?: "Unknown error"}")
             }
         }
@@ -86,28 +101,26 @@ class ConnectionViewModel(private val context: Context) : ViewModel() {
             actionCableService.disconnect()
             appSettingsDataStore.clearDeviceKey()
 
-            _uiState.update { current ->
-                val next = current.copy(
+            updateUiState(ActionCableService.ConnectionState.DISCONNECTED) { current ->
+                current.copy(
                     deviceKey = null,
                     isConnected = false,
                     isAutoConnecting = false,
-                    isReconnecting = false,
-                    connectionState = ActionCableService.ConnectionState.DISCONNECTED
+                    isReconnecting = false
                 )
-                next.withStatusFor(next.connectionState)
             }
         }
     }
 
     fun toggleReceiving(enabled: Boolean) {
-        _uiState.update { it.copy(isReceivingEnabled = enabled) }
+        updateUiState { it.copy(isReceivingEnabled = enabled) }
         viewModelScope.launch {
             appSettingsDataStore.setReceivingEnabled(enabled)
         }
     }
 
     fun toggleSending(enabled: Boolean) {
-        _uiState.update { it.copy(isSendingEnabled = enabled) }
+        updateUiState { it.copy(isSendingEnabled = enabled) }
         viewModelScope.launch {
             appSettingsDataStore.setSendingEnabled(enabled)
         }
@@ -132,18 +145,17 @@ class ConnectionViewModel(private val context: Context) : ViewModel() {
             reconnectJob?.cancel()
             hasPendingReconnect = true
         }
-        _uiState.update { it.copy(isReconnecting = false).withStatusFor(it.connectionState) }
+        updateUiState { it.copy(isReconnecting = false) }
     }
 
     private fun observeStoredDeviceKey() {
         viewModelScope.launch {
             appSettingsDataStore.deviceKeyFlow.collect { storedKey ->
-                _uiState.update { current ->
-                    val next = current.copy(
+                updateUiState { current ->
+                    current.copy(
                         deviceKey = storedKey,
                         isConnected = storedKey != null && current.connectionState == ActionCableService.ConnectionState.CONNECTED
                     )
-                    next.withStatusFor(current.connectionState)
                 }
             }
         }
@@ -157,7 +169,7 @@ class ConnectionViewModel(private val context: Context) : ViewModel() {
             ) { receiving, sending ->
                 receiving to sending
             }.collect { (receiving, sending) ->
-                _uiState.update { current ->
+                updateUiState { current ->
                     current.copy(
                         isReceivingEnabled = receiving,
                         isSendingEnabled = sending
@@ -172,38 +184,31 @@ class ConnectionViewModel(private val context: Context) : ViewModel() {
             actionCableService.connectionState.collect { state ->
                 when (state) {
                     ActionCableService.ConnectionState.CONNECTED -> {
-                        _uiState.update { current ->
-                            val next = current.copy(
-                                connectionState = state,
+                        updateUiState(state) { current ->
+                            current.copy(
                                 isConnected = !current.deviceKey.isNullOrBlank(),
                                 isAutoConnecting = false,
                                 isReconnecting = false
                             )
-                            next.withStatusFor(state)
                         }
                         cancelReconnect()
                         startHeartbeat()
                     }
                     ActionCableService.ConnectionState.DISCONNECTED,
                     ActionCableService.ConnectionState.ERROR -> {
-                        _uiState.update { current ->
-                            val next = current.copy(
-                                connectionState = state,
+                        updateUiState(state) { current ->
+                            current.copy(
                                 isConnected = false,
-                                isAutoConnecting = false
+                                isAutoConnecting = false,
+                                isReconnecting = false
                             )
-                            next.withStatusFor(state)
                         }
                         stopHeartbeat()
                         scheduleReconnectIfNeeded()
                     }
                     ActionCableService.ConnectionState.CONNECTING -> {
-                        _uiState.update { current ->
-                            val next = current.copy(
-                                connectionState = state,
-                                isConnected = false
-                            )
-                            next.withStatusFor(state)
+                        updateUiState(state) { current ->
+                            current.copy(isConnected = false)
                         }
                         stopHeartbeat()
                     }
@@ -222,14 +227,16 @@ class ConnectionViewModel(private val context: Context) : ViewModel() {
 
         if (autoConnectAttempted.compareAndSet(false, true)) {
             Log.d(TAG, "Auto-connecting with stored device key")
-            _uiState.update { current ->
-                val next = current.copy(
-                    isAutoConnecting = true,
-                    connectionState = ActionCableService.ConnectionState.CONNECTING
-                )
-                next.withStatusFor(next.connectionState)
+            updateUiState(ActionCableService.ConnectionState.CONNECTING) { current ->
+                current.copy(isAutoConnecting = true)
             }
-            actionCableService.connect(storedDeviceKey)
+            try {
+                actionCableService.connect(storedDeviceKey)
+            } catch (error: Exception) {
+                if (error is CancellationException) throw error
+                Log.e(TAG, "Auto-connect failed", error)
+                updateStatus("Auto-connect failed: ${error.message ?: "Unknown error"}")
+            }
         }
     }
 
@@ -255,10 +262,7 @@ class ConnectionViewModel(private val context: Context) : ViewModel() {
         reconnectJob?.cancel()
         reconnectJob = null
         hasPendingReconnect = false
-        _uiState.update { current ->
-            val next = current.copy(isReconnecting = false)
-            next.withStatusFor(current.connectionState)
-        }
+        updateUiState { it.copy(isReconnecting = false) }
     }
 
     private fun scheduleReconnectIfNeeded(force: Boolean = false) {
@@ -292,10 +296,7 @@ class ConnectionViewModel(private val context: Context) : ViewModel() {
             }
 
             hasPendingReconnect = false
-            _uiState.update { current ->
-                val next = current.copy(isReconnecting = true)
-                next.withStatusFor(current.connectionState)
-            }
+            updateUiState { current -> current.copy(isReconnecting = true) }
 
             try {
                 var attempt = 0
@@ -314,10 +315,12 @@ class ConnectionViewModel(private val context: Context) : ViewModel() {
                     if (currentState == ActionCableService.ConnectionState.CONNECTED) return@launch
 
                     if (currentState != ActionCableService.ConnectionState.CONNECTING) {
-                        runCatching { actionCableService.connect(storedDeviceKey) }
-                            .onFailure { error ->
-                                Log.e(TAG, "Reconnect attempt failed", error)
-                            }
+                        try {
+                            actionCableService.connect(storedDeviceKey)
+                        } catch (error: Exception) {
+                            if (error is CancellationException) throw error
+                            Log.e(TAG, "Reconnect attempt failed", error)
+                        }
                     }
 
                     attempt++
@@ -329,10 +332,7 @@ class ConnectionViewModel(private val context: Context) : ViewModel() {
                     hasPendingReconnect = true
                 }
 
-                _uiState.update { current ->
-                    val next = current.copy(isReconnecting = false)
-                    next.withStatusFor(current.connectionState)
-                }
+                updateUiState { it.copy(isReconnecting = false) }
             }
         }.also { job ->
             job.invokeOnCompletion {
@@ -350,7 +350,7 @@ class ConnectionViewModel(private val context: Context) : ViewModel() {
     }
 
     private fun updateStatus(message: String) {
-        _uiState.update { it.copy(connectionStatusText = message) }
+        updateUiState { it.copy(connectionStatusText = message) }
     }
 
     override fun onCleared() {
@@ -394,4 +394,7 @@ data class ConnectionUiState(
 ) {
     val canDisconnect: Boolean
         get() = !deviceKey.isNullOrBlank()
+
+    val isConnecting: Boolean
+        get() = connectionState == ActionCableService.ConnectionState.CONNECTING
 }
