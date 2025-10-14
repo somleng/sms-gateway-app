@@ -10,7 +10,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import org.somleng.sms_gateway_app.data.preferences.AppSettingsDataStore
 
-class SmsReceiver : BroadcastReceiver() {
+class IncomingMessageService : BroadcastReceiver() {
     private val TAG = "SmsReceiver"
     private val coroutineScope = CoroutineScope(Dispatchers.IO)
 

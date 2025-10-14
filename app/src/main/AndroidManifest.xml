@@ -44,7 +44,7 @@
     </service>
 
     <receiver
-        android:name=".services.SmsReceiver"
+        android:name=".services.IncomingMessageService"
         android:enabled="true"
         android:exported="true">
         <intent-filter android:priority="999">
