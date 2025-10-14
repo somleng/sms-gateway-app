@@ -272,7 +272,9 @@ fun SMSGatewayScreen(modifier: Modifier = Modifier) {
                 }
                 uiState.isAutoConnecting || uiState.isReconnecting -> {
                     AutoConnectingScreen(
-                        connectionStatus = uiState.connectionStatusText
+                        connectionStatus = uiState.connectionStatusText,
+                        showDisconnect = uiState.canDisconnect,
+                        onDisconnectClick = { connectionViewModel.disconnect() }
                     )
                 }
                 else -> {
@@ -409,6 +411,8 @@ fun DeviceKeyEntryScreen(
 @Composable
 fun AutoConnectingScreen(
     connectionStatus: String = "Auto-connecting to Somleng...",
+    showDisconnect: Boolean = false,
+    onDisconnectClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val helperText = if (connectionStatus.contains("reconnecting", ignoreCase = true)) {
@@ -445,6 +449,35 @@ fun AutoConnectingScreen(
             textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+
+        if (showDisconnect && onDisconnectClick != null) {
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Text(
+                text = "Need to use a different device key? Disconnect to stop retrying.",
+                style = MaterialTheme.typography.bodySmall,
+                textAlign = TextAlign.Center,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 24.dp)
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Button(
+                onClick = onDisconnectClick,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.error
+                )
+            ) {
+                Text(
+                    text = "Disconnect",
+                    color = MaterialTheme.colorScheme.onError
+                )
+            }
+        }
     }
 }
 

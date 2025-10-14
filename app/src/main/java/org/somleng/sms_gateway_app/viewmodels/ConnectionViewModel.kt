@@ -37,6 +37,7 @@ class ConnectionViewModel(private val context: Context) : ViewModel() {
 
     @Volatile private var isAppInForeground = true
     @Volatile private var hasPendingReconnect = false
+    @Volatile private var allowReconnectFromStoredKey = true
 
     init {
         observeConnectionState()
@@ -55,6 +56,7 @@ class ConnectionViewModel(private val context: Context) : ViewModel() {
             return
         }
 
+        allowReconnectFromStoredKey = true
         viewModelScope.launch {
             runCatching {
                 appSettingsDataStore.saveDeviceKey(trimmedKey)
@@ -79,6 +81,7 @@ class ConnectionViewModel(private val context: Context) : ViewModel() {
 
     fun disconnect() {
         viewModelScope.launch {
+            allowReconnectFromStoredKey = false
             cancelReconnect()
             actionCableService.disconnect()
             appSettingsDataStore.clearDeviceKey()
@@ -211,6 +214,7 @@ class ConnectionViewModel(private val context: Context) : ViewModel() {
 
     private suspend fun attemptAutoConnect() {
         if (autoConnectAttempted.get()) return
+        if (!allowReconnectFromStoredKey) return
 
         val storedDeviceKey = appSettingsDataStore.deviceKeyFlow.first()
         if (storedDeviceKey.isNullOrBlank()) return
@@ -263,6 +267,11 @@ class ConnectionViewModel(private val context: Context) : ViewModel() {
             return
         }
 
+        if (!allowReconnectFromStoredKey) {
+            hasPendingReconnect = false
+            return
+        }
+
         val state = actionCableService.connectionState.value
         if (state == ActionCableService.ConnectionState.CONNECTED || state == ActionCableService.ConnectionState.CONNECTING) {
             return
@@ -271,6 +280,11 @@ class ConnectionViewModel(private val context: Context) : ViewModel() {
         if (reconnectJob?.isActive == true) return
 
         reconnectJob = viewModelScope.launch {
+            if (!allowReconnectFromStoredKey) {
+                hasPendingReconnect = false
+                return@launch
+            }
+
             val storedDeviceKey = appSettingsDataStore.deviceKeyFlow.first()
             if (storedDeviceKey.isNullOrBlank()) {
                 hasPendingReconnect = false
@@ -286,6 +300,11 @@ class ConnectionViewModel(private val context: Context) : ViewModel() {
             try {
                 var attempt = 0
                 while (isActive) {
+                    if (!allowReconnectFromStoredKey) {
+                        hasPendingReconnect = false
+                        return@launch
+                    }
+
                     if (!isAppInForeground) {
                         hasPendingReconnect = true
                         return@launch
@@ -345,6 +364,7 @@ class ConnectionViewModel(private val context: Context) : ViewModel() {
         val status = when {
             isReconnecting -> "Reconnecting to Somleng..."
             isAutoConnecting && state != ActionCableService.ConnectionState.CONNECTED -> "Auto-connecting to Somleng..."
+            deviceKey.isNullOrBlank() -> "Not configured"
             state == ActionCableService.ConnectionState.CONNECTING -> "Connecting to Somleng..."
             state == ActionCableService.ConnectionState.CONNECTED -> "Connected to Somleng"
             state == ActionCableService.ConnectionState.DISCONNECTED && !deviceKey.isNullOrBlank() -> "Disconnected"
@@ -371,4 +391,7 @@ data class ConnectionUiState(
     val isAutoConnecting: Boolean = false,
     val isReconnecting: Boolean = false,
     val connectionStatusText: String = "Not configured"
-)
+) {
+    val canDisconnect: Boolean
+        get() = !deviceKey.isNullOrBlank()
+}
