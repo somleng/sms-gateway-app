@@ -126,12 +126,6 @@ class ConnectionViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
-    fun sendHeartbeat() {
-        actionCableService.sendHeartbeat()
-    }
-
-    fun isActionCableConnected(): Boolean = actionCableService.isConnected()
-
     fun onAppForegrounded() {
         isAppInForeground = true
         if (hasPendingReconnect || shouldAttemptReconnectNow()) {
@@ -362,13 +356,13 @@ class ConnectionViewModel(application: Application) : AndroidViewModel(applicati
 
     private fun ConnectionUiState.withStatusFor(state: ActionCableService.ConnectionState): ConnectionUiState {
         val status = when {
-            isReconnecting -> "Reconnecting to Somleng..."
-            isAutoConnecting && state != ActionCableService.ConnectionState.CONNECTED -> "Auto-connecting to Somleng..."
+            isReconnecting -> "Reconnecting..."
+            isAutoConnecting && state != ActionCableService.ConnectionState.CONNECTED -> "Reconnecting..."
             deviceKey.isNullOrBlank() -> "Not configured"
-            state == ActionCableService.ConnectionState.CONNECTING -> "Connecting to Somleng..."
-            state == ActionCableService.ConnectionState.CONNECTED -> "Connected to Somleng"
+            state == ActionCableService.ConnectionState.CONNECTING -> "Connecting..."
+            state == ActionCableService.ConnectionState.CONNECTED -> "Connected"
             state == ActionCableService.ConnectionState.DISCONNECTED && !deviceKey.isNullOrBlank() -> "Disconnected"
-            state == ActionCableService.ConnectionState.ERROR -> "Connection error"
+            state == ActionCableService.ConnectionState.ERROR -> "Connection Error"
             else -> "Not configured"
         }
 

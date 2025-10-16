@@ -201,33 +201,23 @@ class MainActivity : ComponentActivity() {
         ensureSmsPermission(
             onGranted = {
                 Log.i(TAG, "SEND_SMS permission was granted on app start.")
-                // You can perform any setup here that depends on SMS permission
             },
             onDenied = {
                 Log.w(TAG, "SEND_SMS permission was denied on app start.")
                 // Handle the case where the user denies permission at startup.
-                // You might want to explain that certain features will be disabled
-                // or guide them to settings if they change their mind.
             },
-            // Set to true if you want to show your custom rationale dialog
-            // if the system thinks a rationale should be shown.
-            // Set to false if you want to directly show the system dialog
-            // without your custom rationale first, even if shouldShowRequestPermissionRationale() is true.
-            // For startup, `true` is generally better to explain why it's needed immediately.
             showRationaleBeforeRequest = true
         )
 
-        // Get FCM Token (optional, for sending to your server)
+        // Get FCM Token
         FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
             if (!task.isSuccessful) {
                 Log.w(TAG, "Fetching FCM registration token failed", task.exception)
                 return@addOnCompleteListener
             }
-            // Get new FCM registration token
+
             val token = task.result
             Log.d(TAG, "Current FCM Token: $token")
-            // Send this token to your server if needed
-            // myFirebaseMessagingService.sendRegistrationToServer(token) // or call a method in your ViewModel
         }
     }
 }

@@ -105,7 +105,7 @@ class ActionCableService private constructor(private val context: Context) {
         return _connectionState.value == ConnectionState.CONNECTED
     }
 
-    suspend fun forwardSmsToServer(from: String, to: String, body: String) {
+    suspend fun notifyNewInboundMessage(from: String, to: String, body: String) {
         if (messageSubscription == null) {
             Log.w(TAG, "Cannot forward SMS; not connected to ActionCable")
             return
@@ -130,15 +130,10 @@ class ActionCableService private constructor(private val context: Context) {
         }
     }
 
-    fun sendMessage(messageId: String?) {
-        if (messageId.isNullOrBlank()) {
-            Log.w(TAG, "Skipping send message request; message id is missing.")
-            return
-        }
-
+    fun sendMessageRequest(messageId: String) {
         val data = JsonObject().apply { addProperty("id", messageId) }
         runCatching { messageSubscription?.perform("message_send_requested", data) }
-            .onFailure { error -> Log.e(TAG, "Error requesting message send", error) }
+            .onFailure { error -> Log.e(TAG, "Error send message request: $messageId", error) }
     }
 
     private fun createConsumer(deviceKey: String, deviceToken: String): Consumer {
@@ -148,7 +143,6 @@ class ActionCableService private constructor(private val context: Context) {
             headers = mapOf(
                 HEADER_DEVICE_KEY to deviceKey,
                 HEADER_DEVICE_TOKEN to deviceToken,
-                HEADER_USER_AGENT to USER_AGENT
             )
         }
 
@@ -201,14 +195,21 @@ class ActionCableService private constructor(private val context: Context) {
                 }
 
                 when (val messageType = payload["type"].safeAsString()) {
-                    MESSAGE_TYPE_REQUEST -> {
-                        val messageId = payload["message_id"].safeAsString()
+                    "message_send_request" -> {
                         Log.d(TAG, "Received send request from server: $data")
-                        sendMessage(messageId)
+
+                        val messageId = payload["message_id"].safeAsString()
+                        if (messageId.isNullOrBlank()) {
+                            Log.w(TAG, "Missing messageId")
+                            return@onReceived
+                        }
+
+                        sendMessageRequest(messageId)
                     }
-                    MESSAGE_TYPE_CONFIRMED -> {
+                    "message_send_request_confirmed" -> {
                         Log.d(TAG, "Received confirmed message from server: $data")
-                        handleIncomingMessage(data)
+
+                        sendSMS(data)
                     }
                     else -> {
                         Log.d(TAG, "Ignoring unsupported message type '$messageType'")
@@ -218,10 +219,10 @@ class ActionCableService private constructor(private val context: Context) {
         }
     }
 
-    private fun handleIncomingMessage(data: JsonElement) {
+    private fun sendSMS(data: JsonElement) {
         val payload = runCatching { data.asJsonObject["message"].asJsonObject }.getOrNull()
         if (payload == null) {
-            Log.w(TAG, "Ignoring message; payload is not message data: $data")
+            Log.w(TAG, "Invalid message data: $data")
             return
         }
 
@@ -238,9 +239,9 @@ class ActionCableService private constructor(private val context: Context) {
             if (!appSettingsDataStore.isSendingEnabled()) {
                 Log.i(
                     TAG,
-                    "Sending disabled; reporting failure for message ${messageId ?: "<no-id>"} without dispatching SMS."
+                    "Outgoing Message is disabled."
                 )
-                sendDeliveryStatus(messageId, DELIVERY_STATUS_FAILED, SENDING_DISABLED_MESSAGE)
+                sendDeliveryStatus(messageId, "failed")
                 return@launch
             }
 
@@ -250,22 +251,28 @@ class ActionCableService private constructor(private val context: Context) {
 
     private fun sendSms(phoneNumber: String, messageBody: String, messageId: String?) {
         runCatching {
-            smsManager.sendTextMessage(phoneNumber, null, messageBody, null, null)
+            smsManager.sendTextMessage(
+                phoneNumber,
+                null,
+                messageBody,
+                null,
+                null
+            )
+            sendDeliveryStatus(messageId, "sent")
+
             Log.d(TAG, "SMS sent to $phoneNumber")
-            sendDeliveryStatus(messageId, DELIVERY_STATUS_SENT)
         }.onFailure { error ->
             Log.e(TAG, "Error sending SMS to $phoneNumber", error)
-            sendDeliveryStatus(messageId, DELIVERY_STATUS_FAILED, error.message ?: "Unknown error")
+            sendDeliveryStatus(messageId, "failed")
         }
     }
 
-    private fun sendDeliveryStatus(messageId: String?, status: String, message: String? = null) {
+    private fun sendDeliveryStatus(messageId: String?, status: String) {
         if (messageId == null) return
 
         val payload = JsonObject().apply {
             addProperty("id", messageId)
             addProperty("status", status)
-            message?.let { addProperty("error", it) }
         }
 
         runCatching {
@@ -306,17 +313,12 @@ class ActionCableService private constructor(private val context: Context) {
 
     companion object {
         private const val TAG = "ActionCableService"
-        private const val USER_AGENT = "SomlengSMSGatewayApp/1.0"
         private const val CONNECTION_CHANNEL = "SMSGatewayConnectionChannel"
         private const val MESSAGE_CHANNEL = "SMSMessageChannel"
+
         private const val HEADER_DEVICE_KEY = "X-Device-Key"
         private const val HEADER_DEVICE_TOKEN = "X-Device-Token"
-        private const val HEADER_USER_AGENT = "User-Agent"
-        private const val DELIVERY_STATUS_SENT = "sent"
-        private const val DELIVERY_STATUS_FAILED = "failed"
         private const val SENDING_DISABLED_MESSAGE = "Sending disabled by user"
-        private const val MESSAGE_TYPE_REQUEST = "message_send_request"
-        private const val MESSAGE_TYPE_CONFIRMED = "message_send_request_confirmed"
 
         @Volatile
         private var instance: ActionCableService? = null
