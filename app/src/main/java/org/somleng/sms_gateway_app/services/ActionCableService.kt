@@ -258,6 +258,8 @@ class ActionCableService private constructor(private val context: Context) {
                 null,
                 null
             )
+
+            // TODO: Differentiate between sent vs delivered status by checking the delivery report `sentIntent` vs `deliverIntent`
             sendDeliveryStatus(messageId, "sent")
 
             Log.d(TAG, "SMS sent to $phoneNumber")

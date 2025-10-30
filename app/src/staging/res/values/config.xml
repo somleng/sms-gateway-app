@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <!-- TODO: Update to the staging Somleng websocket endpoint when available. -->
+  <string name="somleng_ws_url">wss://app.somleng.org/cable</string>
+</resources>

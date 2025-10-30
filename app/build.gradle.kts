@@ -18,6 +18,28 @@ android {
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
 
+  flavorDimensions += "environment"
+
+  productFlavors {
+    create("dev") {
+      dimension = "environment"
+      applicationIdSuffix = ".dev"
+      versionNameSuffix = "-dev"
+      buildConfigField("String", "ENVIRONMENT", "\"dev\"")
+      isDefault = true
+    }
+    create("staging") {
+      dimension = "environment"
+      applicationIdSuffix = ".staging"
+      versionNameSuffix = "-staging"
+      buildConfigField("String", "ENVIRONMENT", "\"staging\"")
+    }
+    create("production") {
+      dimension = "environment"
+      buildConfigField("String", "ENVIRONMENT", "\"production\"")
+    }
+  }
+
   buildTypes {
     release {
       isMinifyEnabled = false
@@ -36,6 +58,7 @@ android {
   }
   buildFeatures {
     compose = true
+    buildConfig = true
   }
 }
 

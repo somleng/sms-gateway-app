@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+  <domain-config cleartextTrafficPermitted="false">
+    <!-- TODO: Update to match the staging domain if it differs. -->
+    <domain includeSubdomains="true">app.somleng.org</domain>
+    <trust-anchors>
+      <certificates src="system" />
+    </trust-anchors>
+  </domain-config>
+</network-security-config>

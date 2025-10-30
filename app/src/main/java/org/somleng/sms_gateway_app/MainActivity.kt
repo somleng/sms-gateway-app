@@ -83,15 +83,16 @@ class MainActivity : ComponentActivity() {
     private var onSmsPermissionGranted: (() -> Unit)? = null
     private var onSmsPermissionDenied: (() -> Unit)? = null
 
-    private val requestSmsPermissionLauncher =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted: Boolean ->
-            if (isGranted) {
-                Log.d(TAG, "SEND_SMS permission granted by user.")
+    private val requestSmsPermissionsLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissions ->
+            val sendSmsGranted = permissions[Manifest.permission.SEND_SMS] ?: false
+            val receiveSmsGranted = permissions[Manifest.permission.RECEIVE_SMS] ?: false
+
+            if (sendSmsGranted && receiveSmsGranted) {
+                Log.d(TAG, "SEND_SMS and RECEIVE_SMS permissions granted by user.")
                 onSmsPermissionGranted?.invoke()
             } else {
-                Log.d(TAG, "SEND_SMS permission denied by user.")
-                // Optionally, explain to the user that the feature is unavailable
-                // because the permission is needed. You could guide them to app settings.
+                Log.d(TAG, "One or both SMS permissions were denied by user.")
                 onSmsPermissionDenied?.invoke()
             }
             // Reset callbacks
@@ -99,7 +100,7 @@ class MainActivity : ComponentActivity() {
             onSmsPermissionDenied = null
         }
 
-    fun ensureSmsPermission(
+    fun ensureSmsPermissions(
         onGranted: () -> Unit,
         onDenied: (() -> Unit)? = null,
         showRationaleBeforeRequest: Boolean = true
@@ -107,35 +108,41 @@ class MainActivity : ComponentActivity() {
         this.onSmsPermissionGranted = onGranted
         this.onSmsPermissionDenied = onDenied
 
+        val permissions = arrayOf(Manifest.permission.SEND_SMS, Manifest.permission.RECEIVE_SMS)
+
+        val allPermissionsGranted = permissions.all {
+            ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
+        }
+
         when {
-            ContextCompat.checkSelfPermission(
-                this,
-                Manifest.permission.SEND_SMS
-            ) == PackageManager.PERMISSION_GRANTED -> {
-                Log.d(TAG, "SEND_SMS permission already granted.")
+            allPermissionsGranted -> {
+                Log.d(TAG, "All SMS permissions already granted.")
                 this.onSmsPermissionGranted?.invoke()
                 this.onSmsPermissionGranted = null // Clear callback
                 this.onSmsPermissionDenied = null  // Clear callback
             }
-            showRationaleBeforeRequest && shouldShowRequestPermissionRationale(Manifest.permission.SEND_SMS) -> {
+            showRationaleBeforeRequest && permissions.any { shouldShowRequestPermissionRationale(it) } -> {
                 // We should show an explanation.
-                // In a Compose app, you'd typically set a state variable
-                // to trigger a Composable dialog.
-                Log.d(TAG, "Showing rationale for SEND_SMS permission.")
+                Log.d(TAG, "Showing rationale for SMS permissions.")
                 showSmsPermissionRationaleDialog = true
                 // The actual request will be launched when the user interacts with the rationale dialog.
             }
             else -> {
                 // No explanation needed; request the permission directly.
-                Log.d(TAG, "Requesting SEND_SMS permission.")
-                requestSmsPermissionLauncher.launch(Manifest.permission.SEND_SMS)
+                Log.d(TAG, "Requesting SMS permissions.")
+                requestSmsPermissionsLauncher.launch(permissions)
             }
         }
     }
 
-    private fun requestSmsPermissionAfterRationale() {
-        Log.d(TAG, "Requesting SEND_SMS permission after rationale.")
-        requestSmsPermissionLauncher.launch(Manifest.permission.SEND_SMS)
+    private fun requestSmsPermissionsAfterRationale() {
+        Log.d(TAG, "Requesting SMS permissions after rationale.")
+        requestSmsPermissionsLauncher.launch(
+            arrayOf(
+                Manifest.permission.SEND_SMS,
+                Manifest.permission.RECEIVE_SMS
+            )
+        )
     }
 
     private fun askNotificationPermission() {
@@ -188,7 +195,7 @@ class MainActivity : ComponentActivity() {
                             },
                             onConfirm = {
                                 showSmsPermissionRationaleDialog = false
-                                requestSmsPermissionAfterRationale() // Request after user confirms rationale
+                                requestSmsPermissionsAfterRationale() // Request after user confirms rationale
                             }
                         )
                     }
@@ -198,12 +205,12 @@ class MainActivity : ComponentActivity() {
 
         askNotificationPermission()
 
-        ensureSmsPermission(
+        ensureSmsPermissions(
             onGranted = {
-                Log.i(TAG, "SEND_SMS permission was granted on app start.")
+                Log.i(TAG, "SMS permissions were granted on app start.")
             },
             onDenied = {
-                Log.w(TAG, "SEND_SMS permission was denied on app start.")
+                Log.w(TAG, "SMS permissions were denied on app start.")
                 // Handle the case where the user denies permission at startup.
             },
             showRationaleBeforeRequest = true
@@ -569,10 +576,10 @@ fun DisconnectedPreview() {
         Scaffold { innerPadding ->
             SMSGatewayScreen(
                 uiState = ConnectionUiState(),
-                onConnect = {},
-                onDisconnect = {},
-                onToggleReceiving = {},
-                onToggleSending = {},
+                onConnect = { },
+                onDisconnect = { },
+                onToggleReceiving = { },
+                onToggleSending = { },
                 modifier = Modifier.padding(innerPadding)
             )
         }
@@ -598,8 +605,8 @@ fun ConnectedScreenPreview() {
 
             SMSGatewayScreen(
                 uiState = previewState,
-                onConnect = {},
-                onDisconnect = {},
+                onConnect = { },
+                onDisconnect = { },
                 onToggleReceiving = { isReceivingEnabled = it },
                 onToggleSending = { isSendingEnabled = it },
                 modifier = Modifier.padding(innerPadding)
@@ -615,8 +622,8 @@ fun SmsPermissionRationaleDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("SMS Permission Needed") },
-        text = { Text("This app needs permission to send SMS messages to function as an SMS gateway. This allows it to forward messages received via push notifications as SMS.") },
+        title = { Text("SMS Permissions Needed") },
+        text = { Text("This app needs permissions to send and receive SMS messages to function as an SMS gateway. Granting both permissions is required for the app to work correctly.") },
         confirmButton = {
             TextButton(onClick = onConfirm) {
                 Text("OK")
