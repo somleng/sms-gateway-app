@@ -23,13 +23,20 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -44,6 +51,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.KeyboardType
@@ -253,7 +261,8 @@ fun SMSGatewayScreen(
     Box(modifier = modifier.fillMaxSize()) {
         Column(
             modifier = Modifier
-                .fillMaxSize()
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
                 .padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Top
@@ -305,26 +314,33 @@ fun SMSGatewayScreen(
                 }
             }
 
-            Spacer(Modifier.weight(1f))
+            Spacer(modifier = Modifier.height(24.dp))
         }
 
-        Column(
+        SomlengFooter(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(bottom = 16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Text(
-                text = "Somleng Inc.",
-                style = MaterialTheme.typography.bodySmall,
-                textAlign = TextAlign.Center
-            )
-            Text(
-                text = "Version 1.0.0",
-                style = MaterialTheme.typography.bodySmall,
-                textAlign = TextAlign.Center
-            )
-        }
+                .padding(bottom = 16.dp)
+        )
+    }
+}
+
+@Composable
+fun SomlengFooter(modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            text = "Somleng Inc.",
+            style = MaterialTheme.typography.bodySmall,
+            textAlign = TextAlign.Center
+        )
+        Text(
+            text = "Version 1.0.0",
+            style = MaterialTheme.typography.bodySmall,
+            textAlign = TextAlign.Center
+        )
     }
 }
 
@@ -355,9 +371,13 @@ private fun ObserveConnectionLifecycle(connectionViewModel: ConnectionViewModel)
     }
 }
 
-private enum class SMSGatewayTab(val label: String) {
-    MAIN("Main"),
-    SETTINGS("Settings")
+private enum class SMSGatewayTab(
+    val label: String,
+    val selectedIcon: ImageVector,
+    val unselectedIcon: ImageVector
+) {
+    MAIN("Main", Icons.Filled.Home, Icons.Outlined.Home),
+    SETTINGS("Settings", Icons.Filled.Settings, Icons.Outlined.Settings)
 }
 
 @Composable
@@ -377,35 +397,24 @@ fun SMSGatewayApp(
     Scaffold(
         modifier = modifier.fillMaxSize(),
         bottomBar = {
-            Surface(shadowElevation = 4.dp) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    SMSGatewayTab.values().forEach { tab ->
-                        val isSelected = tab == selectedTab
-
-                        Button(
-                            onClick = { selectedTab = tab },
-                            modifier = Modifier.weight(1f),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = if (isSelected) {
-                                    MaterialTheme.colorScheme.primary
+            NavigationBar {
+                SMSGatewayTab.values().forEach { tab ->
+                    val isSelected = tab == selectedTab
+                    NavigationBarItem(
+                        selected = isSelected,
+                        onClick = { selectedTab = tab },
+                        icon = {
+                            Icon(
+                                imageVector = if (isSelected) {
+                                    tab.selectedIcon
                                 } else {
-                                    MaterialTheme.colorScheme.surfaceVariant
+                                    tab.unselectedIcon
                                 },
-                                contentColor = if (isSelected) {
-                                    MaterialTheme.colorScheme.onPrimary
-                                } else {
-                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                }
+                                contentDescription = tab.label
                             )
-                        ) {
-                            Text(tab.label)
-                        }
-                    }
+                        },
+                        label = { Text(tab.label) }
+                    )
                 }
             }
         }
@@ -437,71 +446,84 @@ fun SettingsScreen(
     onSavePhoneNumber: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Column(
+    Box(
         modifier = modifier
             .fillMaxSize()
-            .padding(horizontal = 16.dp, vertical = 24.dp),
-        horizontalAlignment = Alignment.Start,
-        verticalArrangement = Arrangement.Top
+            .padding(horizontal = 16.dp)
+            .padding(top = 24.dp)
     ) {
-        Text(
-            text = "Settings",
-            style = MaterialTheme.typography.headlineSmall
-        )
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        OutlinedTextField(
-            value = uiState.phoneNumberInput,
-            onValueChange = onPhoneNumberChange,
-            label = { Text("Phone Number") },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-            supportingText = {
-                Text("Configure your phone number in your SIM card.")
-            },
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        Button(
-            onClick = onSavePhoneNumber,
-            modifier = Modifier.fillMaxWidth(),
-            enabled = uiState.canSave
+        Column(
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .fillMaxWidth(),
+            horizontalAlignment = Alignment.Start,
+            verticalArrangement = Arrangement.Top
         ) {
-            if (uiState.isSaving) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center
-                ) {
-                    androidx.compose.material3.CircularProgressIndicator(
-                        modifier = Modifier.size(16.dp),
-                        strokeWidth = 2.dp,
-                        color = MaterialTheme.colorScheme.onPrimary
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Saving...")
-                }
-            } else {
-                Text("Save")
-            }
-        }
-
-        uiState.statusMessage?.let { status ->
-            val messageColor = if (status.isError) {
-                MaterialTheme.colorScheme.error
-            } else {
-                MaterialTheme.colorScheme.primary
-            }
-
             Text(
-                text = status.message,
-                style = MaterialTheme.typography.bodyMedium,
-                color = messageColor,
-                modifier = Modifier.padding(top = 12.dp)
+                text = "Settings",
+                style = MaterialTheme.typography.headlineSmall
             )
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            OutlinedTextField(
+                value = uiState.phoneNumberInput,
+                onValueChange = onPhoneNumberChange,
+                label = { Text("Phone Number") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                supportingText = {
+                    Text("Configure your phone number in your SIM card.")
+                },
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Button(
+                onClick = onSavePhoneNumber,
+                modifier = Modifier.fillMaxWidth(),
+                enabled = uiState.canSave
+            ) {
+                if (uiState.isSaving) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        androidx.compose.material3.CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.onPrimary
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Saving...")
+                    }
+                } else {
+                    Text("Save")
+                }
+            }
+
+            uiState.statusMessage?.let { status ->
+                val messageColor = if (status.isError) {
+                    MaterialTheme.colorScheme.error
+                } else {
+                    MaterialTheme.colorScheme.primary
+                }
+
+                Text(
+                    text = status.message,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = messageColor,
+                    modifier = Modifier.padding(top = 12.dp)
+                )
+            }
         }
+
+        SomlengFooter(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 16.dp)
+        )
     }
 }
 

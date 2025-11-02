@@ -69,18 +69,11 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                         isSaving = false,
                         savedPhoneNumber = trimmed,
                         phoneNumberInput = trimmed,
-                        statusMessage = SettingsStatusMessage(
-                            message = if (trimmed.isEmpty()) {
-                                "Phone number cleared"
-                            } else {
-                                "Phone number saved"
-                            },
-                            isError = false
-                        )
                     )
                 }
             } catch (error: Exception) {
                 Log.e(TAG, "Failed to save phone number", error)
+
                 _uiState.update { current ->
                     current.copy(
                         isSaving = false,
