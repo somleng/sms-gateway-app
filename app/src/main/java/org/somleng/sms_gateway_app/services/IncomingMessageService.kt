@@ -8,7 +8,7 @@ import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import org.somleng.sms_gateway_app.data.preferences.AppSettingsDataStore
+import org.somleng.sms_gateway_app.data.preferences.SettingsDataStore
 
 class IncomingMessageService : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
@@ -28,14 +28,14 @@ class IncomingMessageService : BroadcastReceiver() {
                 coroutineScope.launch {
                     try {
                         val appContext = context.applicationContext
-                        val appSettingsDataStore = AppSettingsDataStore(appContext)
+                        val settingsDataStore = SettingsDataStore(appContext)
 
-                        if (!appSettingsDataStore.isReceivingEnabled()) {
+                        if (!settingsDataStore.isReceivingEnabled()) {
                             Log.i(TAG, "Inbound Message is disabled.")
                             return@launch
                         }
 
-                        val phoneNumber = appSettingsDataStore
+                        val phoneNumber = settingsDataStore
                             .getPhoneNumber()
                             ?.takeUnless { it.isBlank() }
 

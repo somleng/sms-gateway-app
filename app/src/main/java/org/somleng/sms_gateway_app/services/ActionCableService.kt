@@ -23,9 +23,11 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.somleng.sms_gateway_app.R
-import org.somleng.sms_gateway_app.data.preferences.AppSettingsDataStore
+import org.somleng.sms_gateway_app.data.preferences.SettingsDataStore
 
 class ActionCableService private constructor(private val context: Context) {
 
@@ -33,11 +35,14 @@ class ActionCableService private constructor(private val context: Context) {
         context.getSystemService<SmsManager>() ?: SmsManager.getDefault()
     }
 
-    private val appSettingsDataStore = AppSettingsDataStore(context)
+    private val settingsDataStore = SettingsDataStore(context)
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private val _connectionState = MutableStateFlow(ConnectionState.DISCONNECTED)
     val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
+
+    private val connectMutex = Mutex()
+    @Volatile private var currentDeviceKey: String? = null
 
     private var consumer: Consumer? = null
     private var connectionSubscription: Subscription? = null
@@ -50,44 +55,55 @@ class ActionCableService private constructor(private val context: Context) {
         ERROR
     }
 
-    suspend fun connect(deviceKey: String) {
+    suspend fun connect(deviceKey: String) = connectMutex.withLock {
+        val trimmedKey = deviceKey.trim()
+
+        // Idempotent: skip if already connected with same key
+        if (isConnected() && currentDeviceKey == trimmedKey) {
+            Log.d(TAG, "Already connected with device key: $trimmedKey")
+            return@withLock
+        }
+
         val tokenResult = fetchDeviceToken()
         val deviceToken = when {
             tokenResult.isSuccess -> tokenResult.getOrNull().orEmpty()
             else -> {
                 Log.e(TAG, "Failed to fetch Firebase token", tokenResult.exceptionOrNull())
                 _connectionState.value = ConnectionState.ERROR
-                return
+                return@withLock
             }
         }
 
         if (deviceToken.isBlank()) {
             Log.w(TAG, "Device token is empty")
             _connectionState.value = ConnectionState.ERROR
-            return
+            return@withLock
         }
 
         _connectionState.value = ConnectionState.CONNECTING
+        currentDeviceKey = trimmedKey
 
         withContext(Dispatchers.IO) {
             runCatching {
                 tearDownConnection()
 
-                val consumer = createConsumer(deviceKey, deviceToken).also { this@ActionCableService.consumer = it }
+                val consumer = createConsumer(trimmedKey, deviceToken).also { this@ActionCableService.consumer = it }
                 connectionSubscription = subscribeToConnectionEvents(consumer)
                 messageSubscription = subscribeToMessageEvents(consumer)
 
-                Log.d(TAG, "Connecting to ActionCable with device token: $deviceToken")
+                Log.d(TAG, "Connecting to ActionCable with device key: $trimmedKey")
                 consumer.connect()
             }.onFailure { error ->
                 Log.e(TAG, "Error connecting to ActionCable", error)
                 _connectionState.value = ConnectionState.ERROR
+                currentDeviceKey = null
             }
         }
     }
 
     fun disconnect() {
         Log.d(TAG, "Disconnecting from ActionCable")
+        currentDeviceKey = null
         tearDownConnection()
         _connectionState.value = ConnectionState.DISCONNECTED
     }
@@ -111,7 +127,7 @@ class ActionCableService private constructor(private val context: Context) {
             return
         }
 
-        if (!appSettingsDataStore.isReceivingEnabled()) {
+        if (!settingsDataStore.isReceivingEnabled()) {
             Log.i(TAG, "Receiving disabled; skipping forwarding SMS from $from to Somleng.")
             return
         }
@@ -236,7 +252,7 @@ class ActionCableService private constructor(private val context: Context) {
         }
 
         serviceScope.launch {
-            if (!appSettingsDataStore.isSendingEnabled()) {
+            if (!settingsDataStore.isSendingEnabled()) {
                 Log.i(
                     TAG,
                     "Outgoing Message is disabled."
@@ -320,7 +336,6 @@ class ActionCableService private constructor(private val context: Context) {
 
         private const val HEADER_DEVICE_KEY = "X-Device-Key"
         private const val HEADER_DEVICE_TOKEN = "X-Device-Token"
-        private const val SENDING_DISABLED_MESSAGE = "Sending disabled by user"
 
         @Volatile
         private var instance: ActionCableService? = null

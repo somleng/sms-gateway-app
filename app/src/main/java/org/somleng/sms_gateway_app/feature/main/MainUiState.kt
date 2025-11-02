@@ -4,7 +4,6 @@ data class MainUiState(
     val isConnected: Boolean = false,
     val receivingEnabled: Boolean = true,
     val sendingEnabled: Boolean = true,
-    val busy: Boolean = false,
     val connectionStatusText: String = "Not configured",
     val deviceKey: String? = null,
     val isAutoConnecting: Boolean = false,
@@ -12,6 +11,9 @@ data class MainUiState(
 ) {
     val canDisconnect: Boolean
         get() = deviceKey != null
+
+    val busy: Boolean
+        get() = isAutoConnecting || isReconnecting || connectionStatusText == "Connecting..."
 
     val isConnecting: Boolean
         get() = busy && !isConnected

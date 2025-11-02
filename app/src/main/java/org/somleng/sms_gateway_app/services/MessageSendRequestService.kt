@@ -7,7 +7,7 @@ import androidx.core.content.ContextCompat
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 import kotlinx.coroutines.runBlocking
-import org.somleng.sms_gateway_app.data.preferences.AppSettingsDataStore
+import org.somleng.sms_gateway_app.data.preferences.SettingsDataStore
 
 class MessageSendRequestService : FirebaseMessagingService() {
 
@@ -32,7 +32,7 @@ class MessageSendRequestService : FirebaseMessagingService() {
             return
         }
 
-        if (!runBlocking { AppSettingsDataStore(this@MessageSendRequestService).isSendingEnabled() }) {
+        if (!runBlocking { SettingsDataStore(this@MessageSendRequestService).isSendingEnabled() }) {
             Log.i(TAG, "Sending disabled")
             return
         }
