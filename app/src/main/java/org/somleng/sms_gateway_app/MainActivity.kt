@@ -29,6 +29,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -38,7 +39,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -58,6 +58,8 @@ import org.somleng.sms_gateway_app.services.ActionCableService
 import org.somleng.sms_gateway_app.ui.theme.SMSGatewayAppTheme
 import org.somleng.sms_gateway_app.viewmodels.ConnectionUiState
 import org.somleng.sms_gateway_app.viewmodels.ConnectionViewModel
+import org.somleng.sms_gateway_app.viewmodels.SettingsUiState
+import org.somleng.sms_gateway_app.viewmodels.SettingsViewModel
 
 class MainActivity : ComponentActivity() {
     companion object {
@@ -65,6 +67,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private val connectionViewModel: ConnectionViewModel by viewModels()
+    private val settingsViewModel: SettingsViewModel by viewModels()
 
     private val requestPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted: Boolean ->
@@ -173,32 +176,33 @@ class MainActivity : ComponentActivity() {
             SMSGatewayAppTheme {
                 ObserveConnectionLifecycle(connectionViewModel)
                 val uiState by connectionViewModel.uiState.collectAsState()
+                val settingsUiState by settingsViewModel.uiState.collectAsState()
 
-                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    SMSGatewayScreen(
-                        uiState = uiState,
-                        onConnect = connectionViewModel::connect,
-                        onDisconnect = connectionViewModel::disconnect,
-                        onToggleReceiving = connectionViewModel::toggleReceiving,
-                        onToggleSending = connectionViewModel::toggleSending,
-                        modifier = Modifier.padding(innerPadding)
+                SMSGatewayApp(
+                    connectionUiState = uiState,
+                    onConnect = connectionViewModel::connect,
+                    onDisconnect = connectionViewModel::disconnect,
+                    onToggleReceiving = connectionViewModel::toggleReceiving,
+                    onToggleSending = connectionViewModel::toggleSending,
+                    settingsUiState = settingsUiState,
+                    onPhoneNumberChange = settingsViewModel::onPhoneNumberChanged,
+                    onSavePhoneNumber = settingsViewModel::savePhoneNumber
+                )
+
+                if (showSmsPermissionRationaleDialog) {
+                    SmsPermissionRationaleDialog(
+                        onDismiss = {
+                            showSmsPermissionRationaleDialog = false
+                            // User dismissed rationale, you might still want to call onDenied
+                            onSmsPermissionDenied?.invoke()
+                            onSmsPermissionDenied = null
+                            onSmsPermissionGranted = null
+                        },
+                        onConfirm = {
+                            showSmsPermissionRationaleDialog = false
+                            requestSmsPermissionsAfterRationale() // Request after user confirms rationale
+                        }
                     )
-
-                    if (showSmsPermissionRationaleDialog) {
-                        SmsPermissionRationaleDialog(
-                            onDismiss = {
-                                showSmsPermissionRationaleDialog = false
-                                // User dismissed rationale, you might still want to call onDenied
-                                onSmsPermissionDenied?.invoke()
-                                onSmsPermissionDenied = null
-                                onSmsPermissionGranted = null
-                            },
-                            onConfirm = {
-                                showSmsPermissionRationaleDialog = false
-                                requestSmsPermissionsAfterRationale() // Request after user confirms rationale
-                            }
-                        )
-                    }
                 }
             }
         }
@@ -347,6 +351,156 @@ private fun ObserveConnectionLifecycle(connectionViewModel: ConnectionViewModel)
 
         onDispose {
             lifecycle.removeObserver(observer)
+        }
+    }
+}
+
+private enum class SMSGatewayTab(val label: String) {
+    MAIN("Main"),
+    SETTINGS("Settings")
+}
+
+@Composable
+fun SMSGatewayApp(
+    connectionUiState: ConnectionUiState,
+    onConnect: (String) -> Unit,
+    onDisconnect: () -> Unit,
+    onToggleReceiving: (Boolean) -> Unit,
+    onToggleSending: (Boolean) -> Unit,
+    settingsUiState: SettingsUiState,
+    onPhoneNumberChange: (String) -> Unit,
+    onSavePhoneNumber: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var selectedTab by rememberSaveable { mutableStateOf(SMSGatewayTab.MAIN) }
+
+    Scaffold(
+        modifier = modifier.fillMaxSize(),
+        bottomBar = {
+            Surface(shadowElevation = 4.dp) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    SMSGatewayTab.values().forEach { tab ->
+                        val isSelected = tab == selectedTab
+
+                        Button(
+                            onClick = { selectedTab = tab },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (isSelected) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.surfaceVariant
+                                },
+                                contentColor = if (isSelected) {
+                                    MaterialTheme.colorScheme.onPrimary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                }
+                            )
+                        ) {
+                            Text(tab.label)
+                        }
+                    }
+                }
+            }
+        }
+    ) { innerPadding ->
+        when (selectedTab) {
+            SMSGatewayTab.MAIN -> SMSGatewayScreen(
+                uiState = connectionUiState,
+                onConnect = onConnect,
+                onDisconnect = onDisconnect,
+                onToggleReceiving = onToggleReceiving,
+                onToggleSending = onToggleSending,
+                modifier = Modifier.padding(innerPadding)
+            )
+
+            SMSGatewayTab.SETTINGS -> SettingsScreen(
+                uiState = settingsUiState,
+                onPhoneNumberChange = onPhoneNumberChange,
+                onSavePhoneNumber = onSavePhoneNumber,
+                modifier = Modifier.padding(innerPadding)
+            )
+        }
+    }
+}
+
+@Composable
+fun SettingsScreen(
+    uiState: SettingsUiState,
+    onPhoneNumberChange: (String) -> Unit,
+    onSavePhoneNumber: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(horizontal = 16.dp, vertical = 24.dp),
+        horizontalAlignment = Alignment.Start,
+        verticalArrangement = Arrangement.Top
+    ) {
+        Text(
+            text = "Settings",
+            style = MaterialTheme.typography.headlineSmall
+        )
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        OutlinedTextField(
+            value = uiState.phoneNumberInput,
+            onValueChange = onPhoneNumberChange,
+            label = { Text("Phone Number") },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+            supportingText = {
+                Text("Configure your phone number in your SIM card.")
+            },
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Button(
+            onClick = onSavePhoneNumber,
+            modifier = Modifier.fillMaxWidth(),
+            enabled = uiState.canSave
+        ) {
+            if (uiState.isSaving) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    androidx.compose.material3.CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Saving...")
+                }
+            } else {
+                Text("Save")
+            }
+        }
+
+        uiState.statusMessage?.let { status ->
+            val messageColor = if (status.isError) {
+                MaterialTheme.colorScheme.error
+            } else {
+                MaterialTheme.colorScheme.primary
+            }
+
+            Text(
+                text = status.message,
+                style = MaterialTheme.typography.bodyMedium,
+                color = messageColor,
+                modifier = Modifier.padding(top = 12.dp)
+            )
         }
     }
 }
@@ -573,16 +727,16 @@ fun SwitchOptionRow(
 @Composable
 fun DisconnectedPreview() {
     SMSGatewayAppTheme {
-        Scaffold { innerPadding ->
-            SMSGatewayScreen(
-                uiState = ConnectionUiState(),
-                onConnect = { },
-                onDisconnect = { },
-                onToggleReceiving = { },
-                onToggleSending = { },
-                modifier = Modifier.padding(innerPadding)
-            )
-        }
+        SMSGatewayApp(
+            connectionUiState = ConnectionUiState(),
+            onConnect = { },
+            onDisconnect = { },
+            onToggleReceiving = { },
+            onToggleSending = { },
+            settingsUiState = SettingsUiState(),
+            onPhoneNumberChange = { },
+            onSavePhoneNumber = { }
+        )
     }
 }
 
@@ -590,28 +744,29 @@ fun DisconnectedPreview() {
 @Composable
 fun ConnectedScreenPreview() {
     SMSGatewayAppTheme {
-        Scaffold { innerPadding ->
-            var isReceivingEnabled by remember { mutableStateOf(true) }
-            var isSendingEnabled by remember { mutableStateOf(false) }
+        val previewState = ConnectionUiState(
+            deviceKey = "preview-device",
+            isConnected = true,
+            connectionState = ActionCableService.ConnectionState.CONNECTED,
+            isReceivingEnabled = true,
+            isSendingEnabled = false,
+            connectionStatusText = "Connected to Somleng"
+        )
 
-            val previewState = ConnectionUiState(
-                deviceKey = "preview-device",
-                isConnected = true,
-                connectionState = ActionCableService.ConnectionState.CONNECTED,
-                isReceivingEnabled = isReceivingEnabled,
-                isSendingEnabled = isSendingEnabled,
-                connectionStatusText = "Connected to Somleng"
-            )
-
-            SMSGatewayScreen(
-                uiState = previewState,
-                onConnect = { },
-                onDisconnect = { },
-                onToggleReceiving = { isReceivingEnabled = it },
-                onToggleSending = { isSendingEnabled = it },
-                modifier = Modifier.padding(innerPadding)
-            )
-        }
+        SMSGatewayApp(
+            connectionUiState = previewState,
+            onConnect = { },
+            onDisconnect = { },
+            onToggleReceiving = { },
+            onToggleSending = { },
+            settingsUiState = SettingsUiState(
+                phoneNumberInput = "+85512345678",
+                savedPhoneNumber = "+85512345678",
+                isInitialized = true
+            ),
+            onPhoneNumberChange = { },
+            onSavePhoneNumber = { }
+        )
     }
 }
 

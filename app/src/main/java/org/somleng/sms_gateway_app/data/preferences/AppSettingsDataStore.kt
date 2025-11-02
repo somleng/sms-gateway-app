@@ -14,6 +14,7 @@ private val Context.dataStore by preferencesDataStore(name = "settings")
 private val DEVICE_KEY = stringPreferencesKey("device_key")
 private val RECEIVING_ENABLED_KEY = booleanPreferencesKey("receiving_enabled")
 private val SENDING_ENABLED_KEY = booleanPreferencesKey("sending_enabled")
+private val PHONE_NUMBER_KEY = stringPreferencesKey("phone_number")
 
 class AppSettingsDataStore(private val context: Context) {
     val deviceKeyFlow: Flow<String?> = context.dataStore.data
@@ -29,6 +30,11 @@ class AppSettingsDataStore(private val context: Context) {
     val sendingEnabledFlow: Flow<Boolean> = context.dataStore.data
         .map { preferences ->
             preferences[SENDING_ENABLED_KEY] ?: true
+        }
+
+    val phoneNumberFlow: Flow<String?> = context.dataStore.data
+        .map { preferences ->
+            preferences[PHONE_NUMBER_KEY]
         }
 
     suspend fun saveDeviceKey(deviceKey: String) {
@@ -55,11 +61,27 @@ class AppSettingsDataStore(private val context: Context) {
         }
     }
 
+    suspend fun savePhoneNumber(phoneNumber: String) {
+        context.dataStore.edit { settings ->
+            settings[PHONE_NUMBER_KEY] = phoneNumber
+        }
+    }
+
+    suspend fun clearPhoneNumber() {
+        context.dataStore.edit { settings ->
+            settings.remove(PHONE_NUMBER_KEY)
+        }
+    }
+
     suspend fun isReceivingEnabled(): Boolean {
         return receivingEnabledFlow.first()
     }
 
     suspend fun isSendingEnabled(): Boolean {
         return sendingEnabledFlow.first()
+    }
+
+    suspend fun getPhoneNumber(): String? {
+        return phoneNumberFlow.first()
     }
 }

@@ -25,11 +25,6 @@ class IncomingMessageService : BroadcastReceiver() {
                     return@forEach
                 }
 
-                // TODO: Figure out how to get the phone number from sim card
-                val simPhoneNumber = "this_device_number"
-
-                Log.i(TAG, "Received SMS: From='$from', To='${simPhoneNumber}'")
-
                 coroutineScope.launch {
                     try {
                         val appContext = context.applicationContext
@@ -40,8 +35,23 @@ class IncomingMessageService : BroadcastReceiver() {
                             return@launch
                         }
 
+                        val phoneNumber = appSettingsDataStore
+                            .getPhoneNumber()
+                            ?.takeUnless { it.isBlank() }
+
+                        if (phoneNumber == null) {
+                            Log.w(
+                                TAG,
+                                "No configured phone number found."
+                            )
+
+                            return@launch
+                        }
+
+                        Log.i(TAG, "Received SMS: From='$from', To='${phoneNumber}'")
+
                         val actionCableService = ActionCableService.getInstance(appContext)
-                        actionCableService.notifyNewInboundMessage(from, simPhoneNumber, body)
+                        actionCableService.notifyNewInboundMessage(from, phoneNumber, body)
                     } catch (e: Exception) {
                         Log.e(TAG, "Error notifying new inbound message from $from: ${e.message}", e)
                     }
