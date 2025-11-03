@@ -20,7 +20,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.res.stringResource
 import androidx.core.content.ContextCompat
 import com.google.firebase.messaging.FirebaseMessaging
-import org.somleng.sms_gateway_app.R
 import org.somleng.sms_gateway_app.feature.main.MainViewModel
 import org.somleng.sms_gateway_app.feature.settings.SettingsViewModel
 import org.somleng.sms_gateway_app.ui.theme.SomlengTheme
@@ -33,18 +32,13 @@ class MainActivity : ComponentActivity() {
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted: Boolean ->
             if (isGranted) {
                 Log.d("Permission", "Notification permission granted")
-                // FCM SDK (and your app) can post notifications.
             } else {
                 Log.d("Permission", "Notification permission denied")
-                // Inform user that notifications are disabled
-                // You could show a dialog explaining why you need the permission
-                // and how they can grant it in app settings.
+                // NOTE: Inform user that notifications are disabled
             }
         }
 
     private var showSmsPermissionRationaleDialog by mutableStateOf(false)
-    private var onSmsPermissionGranted: (() -> Unit)? = null
-    private var onSmsPermissionDenied: (() -> Unit)? = null
 
     private val requestSmsPermissionsLauncher =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissions ->
@@ -53,14 +47,9 @@ class MainActivity : ComponentActivity() {
 
             if (sendSmsGranted && receiveSmsGranted) {
                 Log.d(TAG, "SEND_SMS and RECEIVE_SMS permissions granted by user.")
-                onSmsPermissionGranted?.invoke()
             } else {
                 Log.d(TAG, "One or both SMS permissions were denied by user.")
-                onSmsPermissionDenied?.invoke()
             }
-            // Reset callbacks
-            onSmsPermissionGranted = null
-            onSmsPermissionDenied = null
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -77,9 +66,6 @@ class MainActivity : ComponentActivity() {
                     SmsPermissionRationaleDialog(
                         onDismiss = {
                             showSmsPermissionRationaleDialog = false
-                            onSmsPermissionDenied?.invoke()
-                            onSmsPermissionDenied = null
-                            onSmsPermissionGranted = null
                         },
                         onConfirm = {
                             showSmsPermissionRationaleDialog = false
@@ -98,12 +84,11 @@ class MainActivity : ComponentActivity() {
             },
             onDenied = {
                 Log.w(TAG, "SMS permissions were denied on app start.")
-                // Handle the case where the user denies permission at startup.
             },
             showRationaleBeforeRequest = true
         )
 
-        // Get FCM Token
+        // Get FCM (Firebase) Token
         FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
             if (!task.isSuccessful) {
                 Log.w(TAG, "Fetching FCM registration token failed", task.exception)
@@ -120,9 +105,6 @@ class MainActivity : ComponentActivity() {
         onDenied: (() -> Unit)? = null,
         showRationaleBeforeRequest: Boolean = true
     ) {
-        this.onSmsPermissionGranted = onGranted
-        this.onSmsPermissionDenied = onDenied
-
         val permissions = arrayOf(Manifest.permission.SEND_SMS, Manifest.permission.RECEIVE_SMS)
 
         val allPermissionsGranted = permissions.all {
@@ -132,18 +114,12 @@ class MainActivity : ComponentActivity() {
         when {
             allPermissionsGranted -> {
                 Log.d(TAG, "All SMS permissions already granted.")
-                this.onSmsPermissionGranted?.invoke()
-                this.onSmsPermissionGranted = null // Clear callback
-                this.onSmsPermissionDenied = null  // Clear callback
             }
             showRationaleBeforeRequest && permissions.any { shouldShowRequestPermissionRationale(it) } -> {
-                // We should show an explanation.
                 Log.d(TAG, "Showing rationale for SMS permissions.")
                 showSmsPermissionRationaleDialog = true
-                // The actual request will be launched when the user interacts with the rationale dialog.
             }
             else -> {
-                // No explanation needed; request the permission directly.
                 Log.d(TAG, "Requesting SMS permissions.")
                 requestSmsPermissionsLauncher.launch(permissions)
             }
@@ -156,7 +132,6 @@ class MainActivity : ComponentActivity() {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==
                 PackageManager.PERMISSION_GRANTED
             ) {
-                // FCM SDK (and your app) can post notifications.
                 Log.d("Permission", "Notification permission already granted")
             } else if (shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS)) {
                 // TODO: Display an educational UI explaining to the user why your app needs the
@@ -165,7 +140,6 @@ class MainActivity : ComponentActivity() {
                 // For now, just requesting directly:
                 requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             } else {
-                // Directly ask for the permission.
                 requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             }
         }
