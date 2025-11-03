@@ -26,10 +26,6 @@ import org.somleng.sms_gateway_app.feature.settings.SettingsViewModel
 import org.somleng.sms_gateway_app.ui.theme.SomlengTheme
 
 class MainActivity : ComponentActivity() {
-    companion object {
-        private const val TAG = "MainActivity"
-    }
-
     private val mainViewModel: MainViewModel by viewModels()
     private val settingsViewModel: SettingsViewModel by viewModels()
 
@@ -66,72 +62,6 @@ class MainActivity : ComponentActivity() {
             onSmsPermissionGranted = null
             onSmsPermissionDenied = null
         }
-
-    fun ensureSmsPermissions(
-        onGranted: () -> Unit,
-        onDenied: (() -> Unit)? = null,
-        showRationaleBeforeRequest: Boolean = true
-    ) {
-        this.onSmsPermissionGranted = onGranted
-        this.onSmsPermissionDenied = onDenied
-
-        val permissions = arrayOf(Manifest.permission.SEND_SMS, Manifest.permission.RECEIVE_SMS)
-
-        val allPermissionsGranted = permissions.all {
-            ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
-        }
-
-        when {
-            allPermissionsGranted -> {
-                Log.d(TAG, "All SMS permissions already granted.")
-                this.onSmsPermissionGranted?.invoke()
-                this.onSmsPermissionGranted = null // Clear callback
-                this.onSmsPermissionDenied = null  // Clear callback
-            }
-            showRationaleBeforeRequest && permissions.any { shouldShowRequestPermissionRationale(it) } -> {
-                // We should show an explanation.
-                Log.d(TAG, "Showing rationale for SMS permissions.")
-                showSmsPermissionRationaleDialog = true
-                // The actual request will be launched when the user interacts with the rationale dialog.
-            }
-            else -> {
-                // No explanation needed; request the permission directly.
-                Log.d(TAG, "Requesting SMS permissions.")
-                requestSmsPermissionsLauncher.launch(permissions)
-            }
-        }
-    }
-
-    private fun requestSmsPermissionsAfterRationale() {
-        Log.d(TAG, "Requesting SMS permissions after rationale.")
-        requestSmsPermissionsLauncher.launch(
-            arrayOf(
-                Manifest.permission.SEND_SMS,
-                Manifest.permission.RECEIVE_SMS
-            )
-        )
-    }
-
-    private fun askNotificationPermission() {
-        // This is only necessary for API level 33 and higher.
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==
-                PackageManager.PERMISSION_GRANTED
-            ) {
-                // FCM SDK (and your app) can post notifications.
-                Log.d("Permission", "Notification permission already granted")
-            } else if (shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS)) {
-                // TODO: Display an educational UI explaining to the user why your app needs the
-                // permission for a specific feature.
-                // Then, trigger the permission request.
-                // For now, just requesting directly:
-                requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-            } else {
-                // Directly ask for the permission.
-                requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-            }
-        }
-    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -183,6 +113,76 @@ class MainActivity : ComponentActivity() {
             val token = task.result
             Log.d(TAG, "Current FCM Token: $token")
         }
+    }
+
+    fun ensureSmsPermissions(
+        onGranted: () -> Unit,
+        onDenied: (() -> Unit)? = null,
+        showRationaleBeforeRequest: Boolean = true
+    ) {
+        this.onSmsPermissionGranted = onGranted
+        this.onSmsPermissionDenied = onDenied
+
+        val permissions = arrayOf(Manifest.permission.SEND_SMS, Manifest.permission.RECEIVE_SMS)
+
+        val allPermissionsGranted = permissions.all {
+            ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
+        }
+
+        when {
+            allPermissionsGranted -> {
+                Log.d(TAG, "All SMS permissions already granted.")
+                this.onSmsPermissionGranted?.invoke()
+                this.onSmsPermissionGranted = null // Clear callback
+                this.onSmsPermissionDenied = null  // Clear callback
+            }
+            showRationaleBeforeRequest && permissions.any { shouldShowRequestPermissionRationale(it) } -> {
+                // We should show an explanation.
+                Log.d(TAG, "Showing rationale for SMS permissions.")
+                showSmsPermissionRationaleDialog = true
+                // The actual request will be launched when the user interacts with the rationale dialog.
+            }
+            else -> {
+                // No explanation needed; request the permission directly.
+                Log.d(TAG, "Requesting SMS permissions.")
+                requestSmsPermissionsLauncher.launch(permissions)
+            }
+        }
+    }
+
+    private fun askNotificationPermission() {
+        // This is only necessary for API level 33 and higher.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==
+                PackageManager.PERMISSION_GRANTED
+            ) {
+                // FCM SDK (and your app) can post notifications.
+                Log.d("Permission", "Notification permission already granted")
+            } else if (shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS)) {
+                // TODO: Display an educational UI explaining to the user why your app needs the
+                // permission for a specific feature.
+                // Then, trigger the permission request.
+                // For now, just requesting directly:
+                requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            } else {
+                // Directly ask for the permission.
+                requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+    }
+
+    private fun requestSmsPermissionsAfterRationale() {
+        Log.d(TAG, "Requesting SMS permissions after rationale.")
+        requestSmsPermissionsLauncher.launch(
+            arrayOf(
+                Manifest.permission.SEND_SMS,
+                Manifest.permission.RECEIVE_SMS
+            )
+        )
+    }
+
+    companion object {
+        private const val TAG = "MainActivity"
     }
 }
 

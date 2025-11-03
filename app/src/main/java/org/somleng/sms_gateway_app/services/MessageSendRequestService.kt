@@ -40,12 +40,12 @@ class MessageSendRequestService : FirebaseMessagingService() {
         ActionCableService.getInstance(this).sendMessageRequest(messageId)
     }
 
-    private fun hasSmsPermission(): Boolean {
-        return ContextCompat.checkSelfPermission(this, Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED
-    }
-
     override fun onNewToken(token: String) {
         Log.d(TAG, "New FCM token: $token")
+    }
+
+    private fun hasSmsPermission(): Boolean {
+        return ContextCompat.checkSelfPermission(this, Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED
     }
 
     companion object {

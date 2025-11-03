@@ -25,13 +25,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val settingsDataStore = SettingsDataStore(appContext)
     private val actionCableService = ActionCableService.getInstance(appContext)
 
+    private val _uiState = MutableStateFlow(MainUiState())
+    val ui: StateFlow<MainUiState> = _uiState.asStateFlow()
     private val heartbeatIntervalMs = 30_000L
     private var heartbeatJob: Job? = null
 
     private val autoConnectAttempted = AtomicBoolean(false)
-
-    private val _uiState = MutableStateFlow(MainUiState())
-    val ui: StateFlow<MainUiState> = _uiState.asStateFlow()
 
     private var reconnectJob: Job? = null
     private val reconnectBaseDelayMs = 3_000L
@@ -49,6 +48,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             attemptAutoConnect()
         }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        stopHeartbeat()
+        cancelReconnect()
+        actionCableService.disconnect()
     }
 
     fun onConnectClick(deviceKey: String) {
@@ -358,13 +364,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun updateStatus(message: String) {
         _uiState.update { it.copy(connectionStatusText = message) }
-    }
-
-    override fun onCleared() {
-        super.onCleared()
-        stopHeartbeat()
-        cancelReconnect()
-        actionCableService.disconnect()
     }
 
     companion object {

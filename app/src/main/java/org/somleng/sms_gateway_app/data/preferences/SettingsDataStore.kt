@@ -23,7 +23,6 @@ private object Keys {
 }
 
 class SettingsDataStore(private val context: Context) {
-    
     private val safeData: Flow<Preferences> = context.dataStore.data
         .catch { exception ->
             if (exception is IOException) {

@@ -31,6 +31,15 @@ import org.somleng.sms_gateway_app.data.preferences.SettingsDataStore
 
 class ActionCableService private constructor(private val context: Context) {
 
+    enum class ConnectionState {
+        CONNECTING,
+        CONNECTED,
+        DISCONNECTED,
+        ERROR
+    }
+
+    private val _connectionState = MutableStateFlow(ConnectionState.DISCONNECTED)
+    val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
     private val smsManager: SmsManager by lazy {
         context.getSystemService<SmsManager>() ?: SmsManager.getDefault()
     }
@@ -38,22 +47,12 @@ class ActionCableService private constructor(private val context: Context) {
     private val settingsDataStore = SettingsDataStore(context)
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    private val _connectionState = MutableStateFlow(ConnectionState.DISCONNECTED)
-    val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
-
     private val connectMutex = Mutex()
     @Volatile private var currentDeviceKey: String? = null
 
     private var consumer: Consumer? = null
     private var connectionSubscription: Subscription? = null
     private var messageSubscription: Subscription? = null
-
-    enum class ConnectionState {
-        CONNECTING,
-        CONNECTED,
-        DISCONNECTED,
-        ERROR
-    }
 
     suspend fun connect(deviceKey: String) = connectMutex.withLock {
         val trimmedKey = deviceKey.trim()
@@ -108,6 +107,10 @@ class ActionCableService private constructor(private val context: Context) {
         _connectionState.value = ConnectionState.DISCONNECTED
     }
 
+    fun isConnected(): Boolean {
+        return _connectionState.value == ConnectionState.CONNECTED
+    }
+
     fun sendHeartbeat() {
         runCatching {
             connectionSubscription?.perform("ping")
@@ -115,10 +118,6 @@ class ActionCableService private constructor(private val context: Context) {
         }.onFailure { error ->
             Log.e(TAG, "Error sending heartbeat", error)
         }
-    }
-
-    fun isConnected(): Boolean {
-        return _connectionState.value == ConnectionState.CONNECTED
     }
 
     suspend fun notifyNewInboundMessage(from: String, to: String, body: String) {
