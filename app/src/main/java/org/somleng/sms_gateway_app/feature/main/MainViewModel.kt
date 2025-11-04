@@ -188,7 +188,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                 isConnected = !current.deviceKey.isNullOrBlank(),
                                 isAutoConnecting = false,
                                 isReconnecting = false,
-                                connectionStatusText = "Connected"
+                                connectionStatusText = "Online"
                             )
                         }
                         cancelReconnect()

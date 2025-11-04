@@ -5,9 +5,9 @@
     <!-- Main Screen -->
     <string name="somleng_sms_gateway">Somleng SMS Gateway</string>
     <string name="status">Status</string>
-    <string name="connected">Connected</string>
-    <string name="receiving_messages">Receiving Messages</string>
-    <string name="sending_messages">Sending Messages</string>
+    <string name="connected">Online</string>
+    <string name="inbound_message">Receive SMS</string>
+    <string name="outbound_message">Send SMS</string>
     <string name="disconnect">Disconnect</string>
     <string name="connect">Connect</string>
     <string name="connecting">Connecting…</string>
@@ -17,7 +17,7 @@
     <!-- Settings Screen -->
     <string name="settings">Settings</string>
     <string name="phone_number">Phone Number</string>
-    <string name="phone_number_helper">Configure your phone number in your SIM card.</string>
+    <string name="phone_number_helper">Enter the phone number that is listed on the Somleng dashboard.</string>
     <string name="save">Save</string>
     <string name="saving">Saving…</string>
 

@@ -16,10 +16,8 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -64,12 +62,6 @@ fun MainScreen(
                 modifier = Modifier
                     .size(150.dp)
                     .padding(bottom = 32.dp)
-            )
-
-            Text(
-                text = stringResource(R.string.somleng_sms_gateway),
-                style = MaterialTheme.typography.headlineSmall,
-                modifier = Modifier.padding(bottom = 16.dp)
             )
 
             when {
@@ -128,7 +120,7 @@ private fun ConnectedContent(
         Text(
             text = "${stringResource(R.string.status)}: ${uiState.connectionStatusText}",
             style = MaterialTheme.typography.titleMedium,
-            color = if (uiState.connectionStatusText.contains("Connected", ignoreCase = true)) {
+            color = if (uiState.connectionStatusText.contains("Online", ignoreCase = true)) {
                 MaterialTheme.colorScheme.primary
             } else {
                 MaterialTheme.colorScheme.onSurface
@@ -137,14 +129,14 @@ private fun ConnectedContent(
         )
 
         ToggleRow(
-            text = stringResource(R.string.receiving_messages),
+            text = stringResource(R.string.inbound_message),
             checked = uiState.receivingEnabled,
             onCheckedChange = onToggleReceiving,
             contentDescription = stringResource(R.string.toggle_receiving_messages)
         )
 
         ToggleRow(
-            text = stringResource(R.string.sending_messages),
+            text = stringResource(R.string.outbound_message),
             checked = uiState.sendingEnabled,
             onCheckedChange = onToggleSending,
             contentDescription = stringResource(R.string.toggle_sending_messages)
