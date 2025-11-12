@@ -19,6 +19,6 @@ class ExampleInstrumentedTest {
     fun useAppContext() {
         // Context of the app under test.
         val appContext = InstrumentationRegistry.getInstrumentation().targetContext
-        assertEquals("org.somleng.sms_gateway_app", appContext.packageName)
+        assertEquals("org.somleng.sms_gateway_app.dev", appContext.packageName)
     }
 }
