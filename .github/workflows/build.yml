@@ -32,8 +32,8 @@ jobs:
 
       - name: Provision google-services.json
         run: |
-          set -euo pipefail
           echo "${{ secrets.GOOGLE_SERVICES_JSON_DEV }}" | base64 -d > app/src/dev/google-services.json
+          jq -e . app/src/dev/google-services.json > /dev/null
 
       - name: Build
         run: ./gradlew --no-daemon --stacktrace assembleDevDebug
