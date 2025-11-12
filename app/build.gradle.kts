@@ -28,12 +28,6 @@ android {
       buildConfigField("String", "ENVIRONMENT", "\"dev\"")
       isDefault = true
     }
-    create("staging") {
-      dimension = "environment"
-      applicationIdSuffix = ".staging"
-      versionNameSuffix = "-staging"
-      buildConfigField("String", "ENVIRONMENT", "\"staging\"")
-    }
     create("production") {
       dimension = "environment"
       buildConfigField("String", "ENVIRONMENT", "\"production\"")
