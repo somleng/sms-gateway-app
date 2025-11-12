@@ -1,8 +1,7 @@
 # Somleng SMS Gateway App
 
 [![Android](https://img.shields.io/badge/Platform-Android-brightgreen.svg)](https://android.com)
-[![Kotlin](https://img.shields.io/badge/Language-Kotlin-blue.svg)](https://kotlinlang.org)
-[![Jetpack Compose](https://img.shields.io/badge/UI-Jetpack%20Compose-orange.svg)](https://developer.android.com/jetpack/compose)
+[![Build & Test](https://github.com/somleng/sms-gateway-app/actions/workflows/build.yml/badge.svg)](https://github.com/somleng/sms-gateway-app/actions/workflows/build.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 Transform your Android smartphone into a powerful SMS gateway with the Somleng SMS Gateway App. This lightweight, modern application seamlessly connects to the [Somleng](https://www.somleng.org/) platform, enabling you to send SMS messages programmatically via API or CLI tools, and receive webhooks for incoming SMS messages. Perfect for developers and businesses looking to integrate SMS functionality into their applications and services.

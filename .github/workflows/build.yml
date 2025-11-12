@@ -1,0 +1,42 @@
+name: Build
+on: push
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Set up Gradle caching
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Provision google-services.json
+        run: |
+          echo "${{ secrets.GOOGLE_SERVICES_JSON_DEV }}" | base64 -d > app/src/dev/google-services.json
+          jq -e . app/src/dev/google-services.json > /dev/null
+
+      - name: Build
+        run: ./gradlew --no-daemon --info assembleDevDebug
+
+      - name: Run unit tests
+        run: ./gradlew --no-daemon --info testDevDebugUnitTest
