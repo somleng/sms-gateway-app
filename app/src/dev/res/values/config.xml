@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <!-- Local Somleng websocket endpoint for emulator testing. -->
+  <string name="somleng_ws_url">ws://10.0.2.2:8080/cable</string>
+<!--  <string name="somleng_ws_url">ws://192.168.1.61:8080/cable</string>-->
+</resources>

@@ -38,6 +38,17 @@ Once connected, you can:
 3. Create a new gateway or select an existing one
 4. Copy the device key for use in the app
 
+## ⚙️ Environment Configuration
+
+The Android module now defines dedicated product flavors for `dev`, `staging`, and `production`. Each flavor can maintain its own Firebase configuration, network security rules, resources, and URLs.
+
+- **Flavor selection**: Use the *Build Variants* panel in Android Studio and choose among `devDebug`, `stagingRelease`, etc., or call Gradle tasks such as `./gradlew assembleDevDebug`.
+- **Firebase**: Place a `google-services.json` file inside `app/src/<flavor>/` (for example `app/src/dev/google-services.json`). Each flavor must have its own file before you can build or publish that variant.
+- **Somleng endpoint**: Update `app/src/<flavor>/res/values/config.xml` with the websocket URL that corresponds to the environment.
+- **Network security**: Adjust `app/src/<flavor>/res/xml/network_security_config.xml` if the allowed domains or cleartext requirements differ between environments.
+- **Runtime flag**: Access `BuildConfig.ENVIRONMENT` in Kotlin if you need to branch on the active flavor at runtime.
+- **Default variant**: The `dev` flavor is marked as the default, so Android Studio will select `devDebug` for fresh checkouts unless you pick a different build variant.
+
 ## License
 
 The software is available as open source under the terms of the [MIT License](http://opensource.org/licenses/MIT).
