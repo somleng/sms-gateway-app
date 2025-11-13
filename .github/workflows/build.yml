@@ -91,7 +91,7 @@ jobs:
           jq -e . app/src/dev/google-services.json > /dev/null
           jq -e . app/src/production/google-services.json > /dev/null
 
-      - name: Build release APKs (unsigned)
+      - name: Build release APKs
         run: ./gradlew --no-daemon --info assembleDevRelease assembleProductionRelease
 
       # - name: Upload APKs to GitHub Release
