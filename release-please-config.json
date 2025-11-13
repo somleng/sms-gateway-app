@@ -1,0 +1,14 @@
+{
+  "packages": {
+    ".": {
+      "release-type": "simple",
+      "bootstrap-sha": "07676d23ead8754f06bcbc88bd97a0b5fe361ca7",
+      "extra-files": [
+        {
+          "type": "generic",
+          "path": "app/build.gradle.kts"
+        }
+      ]
+    }
+  }
+}
