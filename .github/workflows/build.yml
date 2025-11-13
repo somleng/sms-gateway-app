@@ -60,9 +60,9 @@ jobs:
   build-release-packages:
     name: Build Release Packages
     runs-on: ubuntu-latest
-    # needs:
-    #   - release
-    # if: ${{ needs.release.outputs.release_created }}
+    needs:
+      - release
+    if: ${{ needs.release.outputs.release_created }}
 
     steps:
       - name: Checkout
@@ -94,12 +94,12 @@ jobs:
       - name: Build release APKs
         run: ./gradlew --no-daemon --info assembleDevRelease assembleProductionRelease
 
-      # - name: Upload APKs to GitHub Release
-      #   uses: softprops/action-gh-release@v2
-      #   with:
-      #     token: ${{ secrets.SOMLENG_PERSONAL_ACCESS_TOKEN }}
-      #     generate_release_notes: true
-      #     tag_name: ${{ needs.release.outputs.release_tag }}
-      #     files: |
-      #       app/build/outputs/apk/dev/release/*.apk
-      #       app/build/outputs/apk/production/release/*.apk
+      - name: Upload APKs to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          token: ${{ secrets.SOMLENG_PERSONAL_ACCESS_TOKEN }}
+          generate_release_notes: true
+          tag_name: ${{ needs.release.outputs.release_tag }}
+          files: |
+            app/build/outputs/apk/dev/release/*.apk
+            app/build/outputs/apk/production/release/*.apk
