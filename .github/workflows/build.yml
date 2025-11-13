@@ -41,7 +41,7 @@ jobs:
   release:
     name: Release
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/fix-release-build'
     outputs:
       release_created: ${{ steps.release-please.outputs.release_created }}
       release_tag: ${{ steps.release-please.outputs.tag_name }}
@@ -56,6 +56,7 @@ jobs:
         id: release-please
         with:
           token: ${{ secrets.SOMLENG_PERSONAL_ACCESS_TOKEN }}
+          release-type: java-yoshi
 
   build-release-packages:
     name: Build Release Packages
