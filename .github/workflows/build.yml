@@ -56,7 +56,7 @@ jobs:
         id: release-please
         with:
           token: ${{ secrets.SOMLENG_PERSONAL_ACCESS_TOKEN }}
-          release-type: java-yoshi
+          release-type: java
 
   build-release-packages:
     name: Build Release Packages
