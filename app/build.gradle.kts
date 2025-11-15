@@ -34,6 +34,15 @@ android {
     }
   }
 
+  signingConfigs {
+    create("release") {
+      storeFile = System.getenv("ANDROID_KEYSTORE_PATH")?.let { file(it) }
+      storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+      keyAlias = System.getenv("ANDROID_KEY_ALIAS")
+      keyPassword = System.getenv("ANDROID_KEY_ALIAS_PASSWORD")
+    }
+  }
+
   buildTypes {
     release {
       isMinifyEnabled = false
@@ -41,6 +50,9 @@ android {
         getDefaultProguardFile("proguard-android-optimize.txt"),
         "proguard-rules.pro"
       )
+      signingConfig = signingConfigs.getByName("release").takeIf {
+        it.storeFile != null
+      }
     }
   }
   compileOptions {
