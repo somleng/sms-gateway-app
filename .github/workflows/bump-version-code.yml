@@ -1,3 +1,4 @@
+name: Bump Version Code
 on:
   pull_request:
     types: [opened]
@@ -5,8 +6,8 @@ on:
       - main
 
 jobs:
-  increment-version-code:
-    name: Increment Version Code
+  bump-version-code:
+    name: Bump Version Code
     if: startsWith(github.head_ref, 'release-please--branches--')
     runs-on: ubuntu-latest
     steps:
@@ -15,7 +16,7 @@ jobs:
         with:
           ref: ${{ github.head_ref }}
 
-      - name: Increment version code
+      - name: Bump version code
         run: |
           perl -pi -e 's/(versionCode\s*=\s*)(\d+)/$1.($2+1)/e' app/build.gradle.kts
 
