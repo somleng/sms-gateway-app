@@ -58,15 +58,10 @@ jobs:
           ANDROID_KEY_ALIAS_PASSWORD: ${{ secrets.ANDROID_KEY_ALIAS_PASSWORD }}
         run: ./gradlew --no-daemon --info assembleDevRelease assembleProductionRelease
 
-      - name: Upload APKs to GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          token: ${{ secrets.SOMLENG_PERSONAL_ACCESS_TOKEN }}
-          generate_release_notes: true
-          tag_name: ${{ needs.release-please.outputs.release_tag }}
-          files: |
-            app/build/outputs/apk/dev/release/*.apk
-            app/build/outputs/apk/production/release/*.apk
+      - name: List release APKs
+        run: |
+          ls -la app/build/outputs/apk/dev/release/*.apk
+          ls -la app/build/outputs/apk/production/release/*.apk
 
   release-please:
     name: Run Release Please
