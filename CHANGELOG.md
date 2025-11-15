@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/somleng/sms-gateway-app/compare/v0.1.1...v0.2.0) (2025-11-15)
+
+
+### Features
+
+* Add a workflow to automatically bump version code ([#17](https://github.com/somleng/sms-gateway-app/issues/17)) ([e110ea3](https://github.com/somleng/sms-gateway-app/commit/e110ea3ff7906a54b94dbe0108fafa4da5d9fc04))
+
 ## [0.1.1](https://github.com/somleng/sms-gateway-app/compare/v0.1.0...v0.1.1) (2025-11-13)
 
 
