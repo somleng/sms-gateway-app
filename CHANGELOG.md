@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/somleng/sms-gateway-app/compare/v0.2.0...v0.3.0) (2025-11-15)
+
+
+### Features
+
+* Upload signed release builds ([#20](https://github.com/somleng/sms-gateway-app/issues/20)) ([5f52492](https://github.com/somleng/sms-gateway-app/commit/5f52492db16cb8d2bdfb1fcaef028139108c9dc1))
+
 ## [0.2.0](https://github.com/somleng/sms-gateway-app/compare/v0.1.1...v0.2.0) (2025-11-15)
 
 
