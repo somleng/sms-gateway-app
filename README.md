@@ -49,6 +49,13 @@ The Android module now defines dedicated product flavors for `dev`, `staging`, a
 - **Runtime flag**: Access `BuildConfig.ENVIRONMENT` in Kotlin if you need to branch on the active flavor at runtime.
 - **Default variant**: The `dev` flavor is marked as the default, so Android Studio will select `devDebug` for fresh checkouts unless you pick a different build variant.
 
+### Release Signing
+
+Release builds are automatically signed on CI using the configured keystore. Local debug builds do not require any signing configuration.
+
+- Building release variants (`assembleDevRelease`, `assembleProductionRelease`)
+- The required environment variables are present (`ANDROID_KEYSTORE_PATH`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_ALIAS_PASSWORD`)
+
 ## License
 
 The software is available as open source under the terms of the [MIT License](http://opensource.org/licenses/MIT).
