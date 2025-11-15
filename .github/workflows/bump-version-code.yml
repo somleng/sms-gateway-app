@@ -1,3 +1,4 @@
+name: Bump Version Code
 on:
   pull_request:
     types: [opened]
