@@ -160,6 +160,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun disconnect() {
         stopHeartbeat()
+        stopConnectJob()
         actionCableService.disconnect()
     }
 
@@ -278,6 +279,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun stopHeartbeat() {
         heartbeatJob?.cancel()
         heartbeatJob = null
+    }
+
+    private fun stopConnectJob() {
+        connectJob?.cancel()
+        connectJob = null
     }
 
     companion object {
