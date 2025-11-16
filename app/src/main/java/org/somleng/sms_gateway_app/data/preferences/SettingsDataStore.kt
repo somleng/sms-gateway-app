@@ -19,6 +19,7 @@ private val Context.dataStore by preferencesDataStore(name = "settings")
 private object Keys {
     val DEVICE_KEY = stringPreferencesKey("device_key")
     val PHONE_NUMBER = stringPreferencesKey("phone_number")
+    val SERVER_HOST = stringPreferencesKey("server_host")
     val RECEIVING_ENABLED = booleanPreferencesKey("receiving_enabled")
     val SENDING_ENABLED = booleanPreferencesKey("sending_enabled")
 }
@@ -36,6 +37,7 @@ class SettingsDataStore(private val context: Context) {
 
     val deviceKey: Flow<String?> = preferenceOf(Keys.DEVICE_KEY)
     val phoneNumber: Flow<String?> = preferenceOf(Keys.PHONE_NUMBER)
+    val serverHost: Flow<String?> = preferenceOf(Keys.SERVER_HOST)
     val receivingEnabled: Flow<Boolean> = preferenceOfWithDefault(Keys.RECEIVING_ENABLED, true)
     val sendingEnabled: Flow<Boolean> = preferenceOfWithDefault(Keys.SENDING_ENABLED, true)
 
@@ -57,6 +59,11 @@ class SettingsDataStore(private val context: Context) {
         setPreference(Keys.PHONE_NUMBER, phoneNumber)
 
     suspend fun getPhoneNumber(): String? = phoneNumber.first()
+
+    suspend fun setServerHost(serverHost: String) =
+        setPreference(Keys.SERVER_HOST, serverHost)
+
+    suspend fun getServerHost(): String? = serverHost.first()
 
     private fun <T> preferenceOf(key: Preferences.Key<T>): Flow<T?> {
         return dataFlow.map { preferences -> preferences[key] }

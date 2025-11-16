@@ -49,7 +49,9 @@ class ActionCableService private constructor(private val context: Context) {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private val connectMutex = Mutex()
-    @Volatile private var currentDeviceKey: String? = null
+
+    @Volatile
+    private var currentDeviceKey: String? = null
 
     private var consumer: Consumer? = null
     private var connectionSubscription: Subscription? = null
@@ -152,7 +154,7 @@ class ActionCableService private constructor(private val context: Context) {
             .onFailure { error -> Log.e(TAG, "Error send message request: $messageId", error) }
     }
 
-    private fun createConsumer(deviceKey: String, deviceToken: String): Consumer {
+    private suspend fun createConsumer(deviceKey: String, deviceToken: String): Consumer {
         val options = Consumer.Options().apply {
             reconnection = true
             reconnectionMaxAttempts = 5
@@ -168,8 +170,15 @@ class ActionCableService private constructor(private val context: Context) {
         return ActionCable.createConsumer(targetUri, options)
     }
 
-    private fun resolveSomlengUri(): URI {
-        return URI(BuildConfig.SOMLENG_WS_URL)
+    private suspend fun resolveSomlengUri(): URI {
+        val baseUrl = if (BuildConfig.ENVIRONMENT == "dev") {
+            // In dev builds, use stored server host if available, otherwise fallback to BuildConfig
+            settingsDataStore.getServerHost() ?: BuildConfig.SOMLENG_WS_URL
+        } else {
+            // In production, always use BuildConfig
+            BuildConfig.SOMLENG_WS_URL
+        }
+        return URI("$baseUrl/cable")
     }
 
     private fun subscribeToConnectionEvents(consumer: Consumer): Subscription {
@@ -221,11 +230,13 @@ class ActionCableService private constructor(private val context: Context) {
 
                         sendMessageRequest(messageId)
                     }
+
                     "message_send_request_confirmed" -> {
                         Log.d(TAG, "Received confirmed message from server: $data")
 
                         sendSMS(data)
                     }
+
                     else -> {
                         Log.d(TAG, "Ignoring unsupported message type '$messageType'")
                     }
