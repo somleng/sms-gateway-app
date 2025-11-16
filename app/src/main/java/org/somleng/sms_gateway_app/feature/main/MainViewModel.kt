@@ -12,7 +12,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -33,7 +32,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var connectJob: Job? = null
     private val reconnectBaseDelayMs = 3_000L
     private val reconnectMaxDelayMs = 15_000L
-    private val maxRetryAttempts = 10
+    private val maxRetryAttempts = 3
     private val manualDisconnect = AtomicBoolean(false)
 
     init {
@@ -89,7 +88,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     statusMessage = "Connecting"
                 )
             }
-            connectWithRetry(trimmedKey)
+            connectWithRetry(trimmedKey, maxRetryAttempts)
         }
     }
 
@@ -108,13 +107,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun connectWithRetry(deviceKey: String) {
+    private fun connectWithRetry(deviceKey: String, maxAttempts: Int?) {
         cancelConnect()
 
         connectJob = viewModelScope.launch {
             var attempt = 0
 
-            while (attempt < maxRetryAttempts && isActive) {
+            while ((maxAttempts == null || attempt < maxAttempts) && isActive) {
                 attempt++
 
                 _uiState.update {
@@ -146,14 +145,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     Log.e(TAG, "Connection attempt $attempt failed", error)
                 }
 
-                if (attempt < maxRetryAttempts) {
+                if (maxAttempts == null || attempt < maxAttempts) {
                     val delayMillis = (reconnectBaseDelayMs * attempt).coerceAtMost(reconnectMaxDelayMs)
                     delay(delayMillis)
                 }
             }
 
             // All attempts failed
-            if (isActive) {
+            if (isActive && maxAttempts != null) {
                 _uiState.update {
                     it.copy(
                         connectionPhase = ConnectionPhase.Failed,
@@ -191,7 +190,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             statusMessage = "Connecting"
                         )
                     }
-                    connectWithRetry(storedKey)
+                    connectWithRetry(storedKey, maxRetryAttempts)
                 }
             }
         }
@@ -251,7 +250,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                 )
                             }
                             manualDisconnect.set(false)
-                            connectWithRetry(deviceKey)
+                            connectWithRetry(deviceKey, null)
                         } else if (!isRetrying) {
                             _uiState.update {
                                 it.copy(
