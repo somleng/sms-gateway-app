@@ -25,12 +25,14 @@ android {
       dimension = "environment"
       applicationIdSuffix = ".dev"
       versionNameSuffix = "-dev"
-      buildConfigField("String", "ENVIRONMENT", "\"dev\"")
       isDefault = true
+      buildConfigField("String", "ENVIRONMENT", "\"dev\"")
+      buildConfigField("String", "SOMLENG_WS_URL", "\"ws://10.0.2.2:8080/cable\"")
     }
     create("production") {
       dimension = "environment"
       buildConfigField("String", "ENVIRONMENT", "\"production\"")
+      buildConfigField("String", "SOMLENG_WS_URL", "\"wss://app.somleng.org/cable\"")
     }
   }
 

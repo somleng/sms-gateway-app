@@ -57,9 +57,9 @@ fun SomlengApp(
     val currentRoute = navBackStackEntry.value?.destination?.route
 
     val title = when (currentRoute) {
-        Routes.MAIN -> stringResource(R.string.somleng_sms_gateway)
+        Routes.MAIN -> stringResource(R.string.app_name)
         Routes.SETTINGS -> stringResource(R.string.settings)
-        else -> stringResource(R.string.somleng_sms_gateway)
+        else -> stringResource(R.string.app_name)
     }
 
     AppScaffold(

@@ -6,7 +6,6 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
@@ -52,10 +51,10 @@ fun AppScaffold(
                             } else {
                                 Icons.Outlined.Home
                             },
-                            contentDescription = stringResource(R.string.main)
+                            contentDescription = stringResource(R.string.home)
                         )
                     },
-                    label = { Text(stringResource(R.string.main)) }
+                    label = { Text(stringResource(R.string.home)) }
                 )
                 NavigationBarItem(
                     selected = currentRoute == Routes.SETTINGS,
