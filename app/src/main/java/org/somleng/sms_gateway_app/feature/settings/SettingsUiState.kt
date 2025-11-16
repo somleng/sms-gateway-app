@@ -2,13 +2,16 @@ package org.somleng.sms_gateway_app.feature.settings
 
 data class SettingsUiState(
     val phoneNumber: String = "",
-    val isValid: Boolean = false,
-    val hasChanges: Boolean = false,
+    val phoneNumberInput: String = "",
     val isSaving: Boolean = false,
-    val savedPhoneNumber: String = "",
-    val isInitialized: Boolean = false
 ) {
+    val hasChanges: Boolean
+        get() = phoneNumberInput != phoneNumber
+
+    val isValid: Boolean
+        get() = phoneNumberInput.isNotEmpty()
+
     val canSave: Boolean
         get() = !isSaving && hasChanges && isValid
-}
 
+}

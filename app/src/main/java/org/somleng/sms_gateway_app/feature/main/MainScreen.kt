@@ -15,17 +15,16 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -41,18 +40,11 @@ fun MainScreen(
     modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.ui.collectAsStateWithLifecycle()
-    var deviceKeyInput by rememberSaveable { mutableStateOf(uiState.deviceKey.orEmpty()) }
-
-    LaunchedEffect(uiState.deviceKey) {
-        if (!uiState.isAutoConnecting && !uiState.isReconnecting) {
-            deviceKeyInput = uiState.deviceKey.orEmpty()
-        }
-    }
 
     MainScreenContent(
         uiState = uiState,
-        deviceKeyInput = deviceKeyInput,
-        onDeviceKeyChange = { deviceKeyInput = it },
+        deviceKeyInput = uiState.deviceKeyInput,
+        onDeviceKeyChange = viewModel::onDeviceKeyInputChange,
         onConnectClick = { key ->
             if (key.isNotBlank()) {
                 viewModel.onConnectClick(key)
@@ -90,8 +82,13 @@ private fun MainScreenContent(
                 contentDescription = stringResource(R.string.somleng_logo),
                 modifier = Modifier
                     .size(150.dp)
-                    .padding(bottom = 32.dp)
+                    .padding(bottom = 16.dp)
             )
+
+            // Unified connection status text
+            ConnectionStatusText(uiState = uiState)
+
+            Spacer(modifier = Modifier.height(24.dp))
 
             when {
                 uiState.isConnected -> {
@@ -102,19 +99,19 @@ private fun MainScreenContent(
                         onDisconnect = onDisconnect
                     )
                 }
-                uiState.isAutoConnecting || uiState.isReconnecting -> {
-                    AutoConnectingContent(
-                        statusText = uiState.connectionStatusText,
+
+                uiState.isConnecting -> {
+                    ConnectingContent(
                         canDisconnect = uiState.canDisconnect,
                         onDisconnect = if (uiState.canDisconnect) onDisconnect else null
                     )
                 }
-                else -> {
+
+                uiState.isConnectionFailed || uiState.isConnectionIdle -> {
                     DeviceKeyEntryContent(
-                        deviceKey = deviceKeyInput,
+                        deviceKeyInput = deviceKeyInput,
                         onDeviceKeyChange = onDeviceKeyChange,
                         onConnectClick = { onConnectClick(deviceKeyInput) },
-                        statusText = uiState.connectionStatusText,
                         isConnecting = uiState.isConnecting
                     )
                 }
@@ -132,6 +129,40 @@ private fun MainScreenContent(
 }
 
 @Composable
+private fun ConnectionStatusText(uiState: MainUiState) {
+    val statusValue = when {
+        uiState.isConnected -> R.string.connected
+        uiState.isConnecting -> R.string.connecting
+        uiState.isConnectionFailed -> R.string.connection_failed
+        uiState.isConnectionIdle && uiState.deviceKey.isNullOrBlank() -> R.string.not_configured
+        uiState.isConnectionIdle && !uiState.deviceKey.isNullOrEmpty() -> R.string.disconnected
+        else -> R.string.disconnected
+    }
+
+    val statusText = stringResource(statusValue)
+
+    val statusColor = when  {
+        uiState.isConnected -> MaterialTheme.colorScheme.primary
+        uiState.isConnectionFailed -> MaterialTheme.colorScheme.error
+        uiState.isConnectionIdle && !uiState.deviceKey.isNullOrBlank() -> MaterialTheme.colorScheme.error
+        else -> MaterialTheme.colorScheme.onSurface
+    }
+
+    Text(
+        text = buildAnnotatedString {
+            withStyle(style = SpanStyle(color = MaterialTheme.colorScheme.onSurface)) {
+                append("Connection: ")
+            }
+            withStyle(style = SpanStyle(color = statusColor)) {
+                append(statusText)
+            }
+        },
+        style = MaterialTheme.typography.titleMedium,
+        textAlign = TextAlign.Center
+    )
+}
+
+@Composable
 private fun ConnectedContent(
     uiState: MainUiState,
     onToggleReceiving: (Boolean) -> Unit,
@@ -142,17 +173,6 @@ private fun ConnectedContent(
         modifier = Modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text(
-            text = "${stringResource(R.string.status)}: ${uiState.connectionStatusText}",
-            style = MaterialTheme.typography.titleMedium,
-            color = if (uiState.connectionStatusText.contains("Online", ignoreCase = true)) {
-                MaterialTheme.colorScheme.primary
-            } else {
-                MaterialTheme.colorScheme.onSurface
-            },
-            modifier = Modifier.padding(bottom = 24.dp)
-        )
-
         ToggleRow(
             text = stringResource(R.string.inbound_message),
             checked = uiState.receivingEnabled,
@@ -178,8 +198,7 @@ private fun ConnectedContent(
 }
 
 @Composable
-private fun AutoConnectingContent(
-    statusText: String,
+private fun ConnectingContent(
     canDisconnect: Boolean,
     onDisconnect: (() -> Unit)?
 ) {
@@ -194,19 +213,10 @@ private fun AutoConnectingContent(
             color = MaterialTheme.colorScheme.primary
         )
 
-        Spacer(modifier = Modifier.height(24.dp))
-
-        Text(
-            text = statusText,
-            style = MaterialTheme.typography.titleMedium,
-            textAlign = TextAlign.Center,
-            color = MaterialTheme.colorScheme.primary
-        )
-
         if (canDisconnect && onDisconnect != null) {
             Spacer(modifier = Modifier.height(24.dp))
             PrimaryButton(
-                text = stringResource(R.string.disconnect),
+                text = stringResource(R.string.cancel),
                 onClick = onDisconnect,
                 isDanger = true
             )
@@ -216,10 +226,9 @@ private fun AutoConnectingContent(
 
 @Composable
 private fun DeviceKeyEntryContent(
-    deviceKey: String,
+    deviceKeyInput: String,
     onDeviceKeyChange: (String) -> Unit,
     onConnectClick: () -> Unit,
-    statusText: String,
     isConnecting: Boolean
 ) {
     Column(
@@ -227,9 +236,9 @@ private fun DeviceKeyEntryContent(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         OutlinedTextField(
-            value = deviceKey,
+            value = deviceKeyInput,
             onValueChange = onDeviceKeyChange,
-            label = { Text(stringResource(R.string.enter_device_key)) },
+            label = { Text(stringResource(R.string.device_key)) },
             singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
             modifier = Modifier.fillMaxWidth()
@@ -240,25 +249,9 @@ private fun DeviceKeyEntryContent(
         PrimaryButton(
             text = stringResource(R.string.connect),
             onClick = onConnectClick,
-            enabled = deviceKey.isNotBlank(),
+            enabled = deviceKeyInput.isNotBlank(),
             isLoading = isConnecting
         )
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        if (statusText.isNotBlank()) {
-            Text(
-                text = statusText,
-                style = MaterialTheme.typography.bodyMedium,
-                textAlign = TextAlign.Center,
-                color = if (statusText.contains("error", ignoreCase = true)) {
-                    MaterialTheme.colorScheme.error
-                } else {
-                    MaterialTheme.colorScheme.onSurface
-                },
-                modifier = Modifier.padding(bottom = 8.dp)
-            )
-        }
     }
 }
 
@@ -268,13 +261,13 @@ private fun MainScreenConnectedPreview() {
     SomlengTheme {
         MainScreenContent(
             uiState = MainUiState(
-                isConnected = true,
+                connectionPhase = ConnectionPhase.Connected,
                 receivingEnabled = true,
                 sendingEnabled = false,
-                connectionStatusText = "Online",
-                deviceKey = "device-key-123"
+                deviceKey = "device-key-123",
+                deviceKeyInput = "device-key-123"
             ),
-            deviceKeyInput = "",
+            deviceKeyInput = "device-key-123",
             onDeviceKeyChange = {},
             onConnectClick = { _ -> },
             onToggleReceiving = {},
@@ -287,13 +280,13 @@ private fun MainScreenConnectedPreview() {
 
 @Preview(showBackground = true)
 @Composable
-private fun MainScreenAutoConnectingPreview() {
+private fun MainScreenConnectingPreview() {
     SomlengTheme {
         MainScreenContent(
             uiState = MainUiState(
-                isAutoConnecting = true,
-                connectionStatusText = "Connecting...",
-                deviceKey = "device-key-123"
+                connectionPhase = ConnectionPhase.Connecting(1),
+                deviceKey = "device-key-123",
+                deviceKeyInput = "device-key-123"
             ),
             deviceKeyInput = "device-key-123",
             onDeviceKeyChange = {},
@@ -312,7 +305,9 @@ private fun MainScreenDeviceKeyPreview() {
     SomlengTheme {
         MainScreenContent(
             uiState = MainUiState(
-                deviceKey = null
+                connectionPhase = ConnectionPhase.Idle,
+                deviceKey = null,
+                deviceKeyInput = ""
             ),
             deviceKeyInput = "",
             onDeviceKeyChange = {},

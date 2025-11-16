@@ -3,26 +3,27 @@
     <string name="default_notification_channel_id">fcm_default_channel</string>
 
     <!-- Main Screen -->
-    <string name="status">Status</string>
     <string name="connected">Online</string>
+    <string name="connection_failed">Failed</string>
+    <string name="disconnected">Disconnected</string>
+    <string name="not_configured">Not configured</string>
     <string name="inbound_message">Receive SMS</string>
     <string name="outbound_message">Send SMS</string>
     <string name="disconnect">Disconnect</string>
     <string name="connect">Connect</string>
     <string name="connecting">Connecting…</string>
-    <string name="enter_device_key">Enter Device Key</string>
-    <string name="reconnecting">Reconnecting…</string>
+    <string name="device_key">Device Key</string>
 
     <!-- Settings Screen -->
     <string name="settings">Settings</string>
-    <string name="phone_number">Phone Number</string>
-    <string name="phone_number_helper">Enter the phone number that is listed on the Somleng dashboard.</string>
+    <string name="phone_number_input">Phone Number</string>
+    <string name="phone_number_hint">Enter the phone number that is listed on the Somleng dashboard.</string>
     <string name="save">Save</string>
     <string name="saving">Saving…</string>
 
     <!-- Navigation -->
-    <string name="home">Home</string>
-    <string name="settings_label">Settings</string>
+    <string name="home_nav">Home</string>
+    <string name="settings_nav">Settings</string>
 
     <!-- Footer -->
     <string name="somleng_inc">Somleng Inc.</string>
@@ -36,6 +37,6 @@
 
     <!-- Content Descriptions -->
     <string name="somleng_logo">Somleng Logo</string>
-    <string name="toggle_receiving_messages">Toggle receiving messages</string>
-    <string name="toggle_sending_messages">Toggle sending messages</string>
+    <string name="toggle_receiving_messages">Toggle to receive messages</string>
+    <string name="toggle_sending_messages">Toggle to send messages</string>
 </resources>

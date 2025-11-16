@@ -21,41 +21,30 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     init {
         viewModelScope.launch {
             settingsDataStore.phoneNumber.collect { storedNumber ->
-                val sanitized = storedNumber.orEmpty()
+                val sanitizedPhoneNumber = storedNumber.orEmpty()
+
                 _uiState.update { current ->
-                    if (!current.isInitialized) {
-                        current.copy(
-                            phoneNumber = sanitized,
-                            savedPhoneNumber = sanitized,
-                            isValid = sanitized.isNotEmpty(),
-                            isInitialized = true
-                        )
-                    } else {
-                        val hasChanges = sanitized != current.phoneNumber
-                        current.copy(
-                            savedPhoneNumber = sanitized,
-                            hasChanges = hasChanges,
-                            isValid = current.phoneNumber.isNotEmpty()
-                        )
-                    }
+                    current.copy(
+                        phoneNumber = sanitizedPhoneNumber,
+                        phoneNumberInput = sanitizedPhoneNumber,
+                    )
                 }
             }
         }
     }
 
     fun onPhoneChange(text: String) {
-        val clean = text.filter { it.isDigit() || it == '+' }
+        val normalizedNumber = text.filter { it.isDigit() || it == '+' }
+
         _uiState.update { current ->
             current.copy(
-                phoneNumber = clean,
-                isValid = clean.isNotEmpty(),
-                hasChanges = clean != current.savedPhoneNumber
+                phoneNumberInput = normalizedNumber,
             )
         }
     }
 
     fun onSave() {
-        val trimmed = _uiState.value.phoneNumber.trim()
+        val normalizedNumber = _uiState.value.phoneNumberInput.trim()
         if (!_uiState.value.isValid) return
 
         viewModelScope.launch {
@@ -64,18 +53,12 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                     current.copy(isSaving = true)
                 }
 
-                if (trimmed.isEmpty()) {
-                    settingsDataStore.clearPhoneNumber()
-                } else {
-                    settingsDataStore.setPhoneNumber(trimmed)
-                }
+                settingsDataStore.setPhoneNumber(normalizedNumber)
 
                 _uiState.update { current ->
                     current.copy(
                         isSaving = false,
-                        savedPhoneNumber = trimmed,
-                        phoneNumber = trimmed,
-                        hasChanges = false
+                        phoneNumberInput = normalizedNumber,
                     )
                 }
             } catch (error: Exception) {
