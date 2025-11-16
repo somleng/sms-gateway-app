@@ -24,7 +24,7 @@ private object Keys {
 }
 
 class SettingsDataStore(private val context: Context) {
-    private val safeData: Flow<Preferences> = context.dataStore.data
+    private val dataFlow: Flow<Preferences> = context.dataStore.data
         .catch { exception ->
             if (exception is IOException) {
                 emit(emptyPreferences())
@@ -33,12 +33,37 @@ class SettingsDataStore(private val context: Context) {
             }
         }
 
-    private fun <T> optionalPreferenceFlow(key: Preferences.Key<T>): Flow<T?> {
-        return safeData.map { preferences -> preferences[key] }
+
+    val deviceKey: Flow<String?> = preferenceOf(Keys.DEVICE_KEY)
+    val phoneNumber: Flow<String?> = preferenceOf(Keys.PHONE_NUMBER)
+    val receivingEnabled: Flow<Boolean> = preferenceOfWithDefault(Keys.RECEIVING_ENABLED, true)
+    val sendingEnabled: Flow<Boolean> = preferenceOfWithDefault(Keys.SENDING_ENABLED, true)
+
+    suspend fun setDeviceKey(deviceKey: String) = setPreference(Keys.DEVICE_KEY, deviceKey)
+    suspend fun getDeviceKey(): String? = deviceKey.first()
+    suspend fun clearDeviceKey() = clearPreference(Keys.DEVICE_KEY)
+
+    suspend fun setReceivingEnabled(enabled: Boolean) =
+        setPreference(Keys.RECEIVING_ENABLED, enabled)
+
+    suspend fun isReceivingEnabled(): Boolean = receivingEnabled.first()
+
+    suspend fun setSendingEnabled(enabled: Boolean) =
+        setPreference(Keys.SENDING_ENABLED, enabled)
+
+    suspend fun isSendingEnabled(): Boolean = sendingEnabled.first()
+
+    suspend fun setPhoneNumber(phoneNumber: String) =
+        setPreference(Keys.PHONE_NUMBER, phoneNumber)
+
+    suspend fun getPhoneNumber(): String? = phoneNumber.first()
+
+    private fun <T> preferenceOf(key: Preferences.Key<T>): Flow<T?> {
+        return dataFlow.map { preferences -> preferences[key] }
     }
 
-    private fun <T> preferenceFlow(key: Preferences.Key<T>, defaultValue: T): Flow<T> {
-        return safeData.map { preferences -> preferences[key] ?: defaultValue }
+    private fun <T> preferenceOfWithDefault(key: Preferences.Key<T>, defaultValue: T): Flow<T> {
+        return dataFlow.map { preferences -> preferences[key] ?: defaultValue }
     }
 
     private suspend fun <T> setPreference(key: Preferences.Key<T>, value: T) {
@@ -52,35 +77,4 @@ class SettingsDataStore(private val context: Context) {
             settings.remove(key)
         }
     }
-
-    val deviceKey: Flow<String?> = optionalPreferenceFlow(Keys.DEVICE_KEY)
-
-    val phoneNumber: Flow<String?> = optionalPreferenceFlow(Keys.PHONE_NUMBER)
-
-    val receivingEnabled: Flow<Boolean> = preferenceFlow(Keys.RECEIVING_ENABLED, true)
-
-    val sendingEnabled: Flow<Boolean> = preferenceFlow(Keys.SENDING_ENABLED, true)
-
-    suspend fun setDeviceKey(deviceKey: String) = setPreference(Keys.DEVICE_KEY, deviceKey)
-
-    suspend fun clearDeviceKey() = clearPreference(Keys.DEVICE_KEY)
-
-    suspend fun setReceivingEnabled(enabled: Boolean) =
-        setPreference(Keys.RECEIVING_ENABLED, enabled)
-
-    suspend fun setSendingEnabled(enabled: Boolean) =
-        setPreference(Keys.SENDING_ENABLED, enabled)
-
-    suspend fun setPhoneNumber(phoneNumber: String) =
-        setPreference(Keys.PHONE_NUMBER, phoneNumber)
-
-    suspend fun clearPhoneNumber() = clearPreference(Keys.PHONE_NUMBER)
-
-    suspend fun getDeviceKey(): String? = deviceKey.first()
-
-    suspend fun isReceivingEnabled(): Boolean = receivingEnabled.first()
-
-    suspend fun isSendingEnabled(): Boolean = sendingEnabled.first()
-
-    suspend fun getPhoneNumber(): String? = phoneNumber.first()
 }

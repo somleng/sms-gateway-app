@@ -60,8 +60,8 @@ private fun SettingsScreenContent(
             PhoneNumberField(
                 value = uiState.phoneNumber,
                 onValueChange = onPhoneChange,
-                label = stringResource(R.string.phone_number),
-                supportingText = stringResource(R.string.phone_number_helper),
+                label = stringResource(R.string.phone_number_input),
+                supportingText = stringResource(R.string.phone_number_hint),
                 isError = uiState.phoneNumber.isNotEmpty() && !uiState.isValid,
                 modifier = Modifier.fillMaxWidth()
             )
@@ -69,7 +69,7 @@ private fun SettingsScreenContent(
             Spacer(modifier = Modifier.height(16.dp))
 
             PrimaryButton(
-                text = stringResource(R.string.save),
+                text = stringResource(R.string.save_button),
                 onClick = onSave,
                 enabled = uiState.canSave,
                 isLoading = uiState.isSaving,
@@ -92,8 +92,6 @@ private fun SettingsScreenPreview() {
         SettingsScreenContent(
             uiState = SettingsUiState(
                 phoneNumber = "+85512345678",
-                isValid = true,
-                hasChanges = true,
                 savedPhoneNumber = "+85510123456",
             ),
             onPhoneChange = {},

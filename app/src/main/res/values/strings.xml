@@ -15,9 +15,9 @@
 
     <!-- Settings Screen -->
     <string name="settings">Settings</string>
-    <string name="phone_number">Phone Number</string>
-    <string name="phone_number_helper">Enter the phone number that is listed on the Somleng dashboard.</string>
-    <string name="save">Save</string>
+    <string name="phone_number_input">Phone Number</string>
+    <string name="phone_number_hint">Enter the phone number that is listed on the Somleng dashboard.</string>
+    <string name="save_button">Save</string>
     <string name="saving">Saving…</string>
 
     <!-- Navigation -->

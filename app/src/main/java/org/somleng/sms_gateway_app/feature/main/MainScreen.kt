@@ -24,8 +24,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -44,7 +47,8 @@ fun MainScreen(
     var deviceKeyInput by rememberSaveable { mutableStateOf(uiState.deviceKey.orEmpty()) }
 
     LaunchedEffect(uiState.deviceKey) {
-        if (!uiState.isAutoConnecting && !uiState.isReconnecting) {
+        // Only sync device key from state when it's initially loaded or changed externally
+        if (uiState.deviceKey != null && deviceKeyInput.isEmpty()) {
             deviceKeyInput = uiState.deviceKey.orEmpty()
         }
     }
@@ -90,11 +94,16 @@ private fun MainScreenContent(
                 contentDescription = stringResource(R.string.somleng_logo),
                 modifier = Modifier
                     .size(150.dp)
-                    .padding(bottom = 32.dp)
+                    .padding(bottom = 16.dp)
             )
 
+            // Unified connection status text
+            ConnectionStatusText(uiState = uiState)
+
+            Spacer(modifier = Modifier.height(24.dp))
+
             when {
-                uiState.isConnected -> {
+                uiState.showConnectedView -> {
                     ConnectedContent(
                         uiState = uiState,
                         onToggleReceiving = onToggleReceiving,
@@ -102,19 +111,19 @@ private fun MainScreenContent(
                         onDisconnect = onDisconnect
                     )
                 }
-                uiState.isAutoConnecting || uiState.isReconnecting -> {
-                    AutoConnectingContent(
-                        statusText = uiState.connectionStatusText,
+
+                uiState.showConnectingView -> {
+                    ConnectingContent(
                         canDisconnect = uiState.canDisconnect,
                         onDisconnect = if (uiState.canDisconnect) onDisconnect else null
                     )
                 }
-                else -> {
+
+                uiState.showDeviceKeyForm -> {
                     DeviceKeyEntryContent(
                         deviceKey = deviceKeyInput,
                         onDeviceKeyChange = onDeviceKeyChange,
                         onConnectClick = { onConnectClick(deviceKeyInput) },
-                        statusText = uiState.connectionStatusText,
                         isConnecting = uiState.isConnecting
                     )
                 }
@@ -132,6 +141,37 @@ private fun MainScreenContent(
 }
 
 @Composable
+private fun ConnectionStatusText(uiState: MainUiState) {
+    val statusValue = when {
+        uiState.isConnected -> uiState.statusMessage
+        uiState.isConnecting -> uiState.statusMessage
+        uiState.deviceKey.isNullOrBlank() -> "Not configured"
+        else -> uiState.statusMessage
+    }
+
+    val statusColor = when (statusValue) {
+        "Online" -> MaterialTheme.colorScheme.primary
+        "Disconnected", "Failed" -> MaterialTheme.colorScheme.error
+        "Connecting" -> MaterialTheme.colorScheme.primary
+        "Not configured" -> MaterialTheme.colorScheme.onSurface
+        else -> MaterialTheme.colorScheme.onSurface
+    }
+
+    Text(
+        text = buildAnnotatedString {
+            withStyle(style = SpanStyle(color = MaterialTheme.colorScheme.onSurface)) {
+                append("Connection: ")
+            }
+            withStyle(style = SpanStyle(color = statusColor)) {
+                append(statusValue)
+            }
+        },
+        style = MaterialTheme.typography.titleMedium,
+        textAlign = TextAlign.Center
+    )
+}
+
+@Composable
 private fun ConnectedContent(
     uiState: MainUiState,
     onToggleReceiving: (Boolean) -> Unit,
@@ -142,17 +182,6 @@ private fun ConnectedContent(
         modifier = Modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text(
-            text = "${stringResource(R.string.status)}: ${uiState.connectionStatusText}",
-            style = MaterialTheme.typography.titleMedium,
-            color = if (uiState.connectionStatusText.contains("Online", ignoreCase = true)) {
-                MaterialTheme.colorScheme.primary
-            } else {
-                MaterialTheme.colorScheme.onSurface
-            },
-            modifier = Modifier.padding(bottom = 24.dp)
-        )
-
         ToggleRow(
             text = stringResource(R.string.inbound_message),
             checked = uiState.receivingEnabled,
@@ -178,8 +207,7 @@ private fun ConnectedContent(
 }
 
 @Composable
-private fun AutoConnectingContent(
-    statusText: String,
+private fun ConnectingContent(
     canDisconnect: Boolean,
     onDisconnect: (() -> Unit)?
 ) {
@@ -191,15 +219,6 @@ private fun AutoConnectingContent(
         androidx.compose.material3.CircularProgressIndicator(
             modifier = Modifier.size(48.dp),
             strokeWidth = 4.dp,
-            color = MaterialTheme.colorScheme.primary
-        )
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        Text(
-            text = statusText,
-            style = MaterialTheme.typography.titleMedium,
-            textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.primary
         )
 
@@ -219,7 +238,6 @@ private fun DeviceKeyEntryContent(
     deviceKey: String,
     onDeviceKeyChange: (String) -> Unit,
     onConnectClick: () -> Unit,
-    statusText: String,
     isConnecting: Boolean
 ) {
     Column(
@@ -243,22 +261,6 @@ private fun DeviceKeyEntryContent(
             enabled = deviceKey.isNotBlank(),
             isLoading = isConnecting
         )
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        if (statusText.isNotBlank()) {
-            Text(
-                text = statusText,
-                style = MaterialTheme.typography.bodyMedium,
-                textAlign = TextAlign.Center,
-                color = if (statusText.contains("error", ignoreCase = true)) {
-                    MaterialTheme.colorScheme.error
-                } else {
-                    MaterialTheme.colorScheme.onSurface
-                },
-                modifier = Modifier.padding(bottom = 8.dp)
-            )
-        }
     }
 }
 
@@ -268,10 +270,10 @@ private fun MainScreenConnectedPreview() {
     SomlengTheme {
         MainScreenContent(
             uiState = MainUiState(
-                isConnected = true,
+                connectionPhase = ConnectionPhase.Connected,
                 receivingEnabled = true,
                 sendingEnabled = false,
-                connectionStatusText = "Online",
+                statusMessage = "Online",
                 deviceKey = "device-key-123"
             ),
             deviceKeyInput = "",
@@ -287,12 +289,12 @@ private fun MainScreenConnectedPreview() {
 
 @Preview(showBackground = true)
 @Composable
-private fun MainScreenAutoConnectingPreview() {
+private fun MainScreenConnectingPreview() {
     SomlengTheme {
         MainScreenContent(
             uiState = MainUiState(
-                isAutoConnecting = true,
-                connectionStatusText = "Connecting...",
+                connectionPhase = ConnectionPhase.Connecting(1),
+                statusMessage = "Connecting",
                 deviceKey = "device-key-123"
             ),
             deviceKeyInput = "device-key-123",
@@ -312,6 +314,7 @@ private fun MainScreenDeviceKeyPreview() {
     SomlengTheme {
         MainScreenContent(
             uiState = MainUiState(
+                connectionPhase = ConnectionPhase.Idle,
                 deviceKey = null
             ),
             deviceKeyInput = "",
