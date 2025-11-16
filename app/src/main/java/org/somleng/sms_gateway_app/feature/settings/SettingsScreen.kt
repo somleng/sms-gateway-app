@@ -8,18 +8,19 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.somleng.sms_gateway_app.R
 import org.somleng.sms_gateway_app.ui.components.Footer
 import org.somleng.sms_gateway_app.ui.components.PhoneNumberField
 import org.somleng.sms_gateway_app.ui.components.PrimaryButton
+import org.somleng.sms_gateway_app.ui.theme.SomlengTheme
 
 @Composable
 fun SettingsScreen(
@@ -28,6 +29,21 @@ fun SettingsScreen(
 ) {
     val uiState by viewModel.ui.collectAsStateWithLifecycle()
 
+    SettingsScreenContent(
+        uiState = uiState,
+        onPhoneChange = viewModel::onPhoneChange,
+        onSave = viewModel::onSave,
+        modifier = modifier
+    )
+}
+
+@Composable
+private fun SettingsScreenContent(
+    uiState: SettingsUiState,
+    onPhoneChange: (String) -> Unit,
+    onSave: () -> Unit,
+    modifier: Modifier = Modifier
+) {
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -43,7 +59,7 @@ fun SettingsScreen(
         ) {
             PhoneNumberField(
                 value = uiState.phoneNumber,
-                onValueChange = viewModel::onPhoneChange,
+                onValueChange = onPhoneChange,
                 label = stringResource(R.string.phone_number),
                 supportingText = stringResource(R.string.phone_number_helper),
                 isError = uiState.phoneNumber.isNotEmpty() && !uiState.isValid,
@@ -54,7 +70,7 @@ fun SettingsScreen(
 
             PrimaryButton(
                 text = stringResource(R.string.save),
-                onClick = viewModel::onSave,
+                onClick = onSave,
                 enabled = uiState.canSave,
                 isLoading = uiState.isSaving,
                 modifier = Modifier.fillMaxWidth()
@@ -69,3 +85,20 @@ fun SettingsScreen(
     }
 }
 
+@Preview(showBackground = true)
+@Composable
+private fun SettingsScreenPreview() {
+    SomlengTheme {
+        SettingsScreenContent(
+            uiState = SettingsUiState(
+                phoneNumber = "+85512345678",
+                isValid = true,
+                hasChanges = true,
+                savedPhoneNumber = "+85510123456",
+            ),
+            onPhoneChange = {},
+            onSave = {},
+            modifier = Modifier.fillMaxSize()
+        )
+    }
+}
