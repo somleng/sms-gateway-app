@@ -216,7 +216,7 @@ private fun ConnectingContent(
         if (canDisconnect && onDisconnect != null) {
             Spacer(modifier = Modifier.height(24.dp))
             PrimaryButton(
-                text = stringResource(R.string.disconnect),
+                text = stringResource(R.string.cancel),
                 onClick = onDisconnect,
                 isDanger = true
             )
