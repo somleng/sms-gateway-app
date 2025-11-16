@@ -57,11 +57,11 @@ class ActionCableService private constructor(private val context: Context) {
     private var connectionSubscription: Subscription? = null
     private var messageSubscription: Subscription? = null
 
-    suspend fun connect(deviceKey: String) = connectMutex.withLock {
+    suspend fun connect(deviceKey: String, forceReconnect: Boolean = false) = connectMutex.withLock {
         val trimmedKey = deviceKey.trim()
 
         // Idempotent: skip if already connected with same key
-        if (isConnected() && currentDeviceKey == trimmedKey) {
+        if (!forceReconnect && isConnected() && currentDeviceKey == trimmedKey) {
             Log.d(TAG, "Already connected with device key: $trimmedKey")
             return@withLock
         }

@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import java.io.IOException
+import org.somleng.sms_gateway_app.services.ActionCableService
 
 // Declare an extension property on Context
 private val Context.dataStore by preferencesDataStore(name = "settings")
@@ -60,8 +61,15 @@ class SettingsDataStore(private val context: Context) {
 
     suspend fun getPhoneNumber(): String? = phoneNumber.first()
 
-    suspend fun setServerHost(serverHost: String) =
-        setPreference(Keys.SERVER_HOST, serverHost)
+    suspend fun setServerHost(serverHost: String) {
+        val normalizedHost = serverHost.trim()
+        val previousHost = getServerHost()
+        setPreference(Keys.SERVER_HOST, normalizedHost)
+
+        if (previousHost != normalizedHost) {
+            reconnectIfNeeded()
+        }
+    }
 
     suspend fun getServerHost(): String? = serverHost.first()
 
@@ -71,6 +79,19 @@ class SettingsDataStore(private val context: Context) {
 
     private fun <T> preferenceOfWithDefault(key: Preferences.Key<T>, defaultValue: T): Flow<T> {
         return dataFlow.map { preferences -> preferences[key] ?: defaultValue }
+    }
+
+    private suspend fun reconnectIfNeeded() {
+        val deviceKey = getDeviceKey()
+        if (deviceKey.isNullOrBlank()) return
+
+        val actionCableService = ActionCableService.getInstance(context)
+        val currentState = actionCableService.connectionState.value
+        if (currentState == ActionCableService.ConnectionState.CONNECTED ||
+            currentState == ActionCableService.ConnectionState.CONNECTING
+        ) {
+            actionCableService.connect(deviceKey, forceReconnect = true)
+        }
     }
 
     private suspend fun <T> setPreference(key: Preferences.Key<T>, value: T) {

@@ -40,6 +40,8 @@ class MainActivity : ComponentActivity() {
 
     private var showSmsPermissionRationaleDialog by mutableStateOf(false)
 
+    private var smsPermissionCallbacks: Pair<() -> Unit, (() -> Unit)?> = Pair({}, null)
+
     private val requestSmsPermissionsLauncher =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissions ->
             val sendSmsGranted = permissions[Manifest.permission.SEND_SMS] ?: false
@@ -47,8 +49,10 @@ class MainActivity : ComponentActivity() {
 
             if (sendSmsGranted && receiveSmsGranted) {
                 Log.d(TAG, "SEND_SMS and RECEIVE_SMS permissions granted by user.")
+                smsPermissionCallbacks.first.invoke()
             } else {
                 Log.d(TAG, "One or both SMS permissions were denied by user.")
+                smsPermissionCallbacks.second?.invoke()
             }
         }
 
@@ -111,9 +115,13 @@ class MainActivity : ComponentActivity() {
             ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
         }
 
+        // Store callbacks for later use by the launcher
+        smsPermissionCallbacks = Pair(onGranted, onDenied)
+
         when {
             allPermissionsGranted -> {
                 Log.d(TAG, "All SMS permissions already granted.")
+                onGranted()
             }
             showRationaleBeforeRequest && permissions.any { shouldShowRequestPermissionRationale(it) } -> {
                 Log.d(TAG, "Showing rationale for SMS permissions.")
