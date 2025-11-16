@@ -26,12 +26,14 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.somleng.sms_gateway_app.R
 import org.somleng.sms_gateway_app.ui.components.Footer
 import org.somleng.sms_gateway_app.ui.components.PrimaryButton
 import org.somleng.sms_gateway_app.ui.components.ToggleRow
+import org.somleng.sms_gateway_app.ui.theme.SomlengTheme
 
 @Composable
 fun MainScreen(
@@ -47,6 +49,33 @@ fun MainScreen(
         }
     }
 
+    MainScreenContent(
+        uiState = uiState,
+        deviceKeyInput = deviceKeyInput,
+        onDeviceKeyChange = { deviceKeyInput = it },
+        onConnectClick = { key ->
+            if (key.isNotBlank()) {
+                viewModel.onConnectClick(key)
+            }
+        },
+        onToggleReceiving = viewModel::toggleReceiving,
+        onToggleSending = viewModel::toggleSending,
+        onDisconnect = viewModel::onDisconnectClick,
+        modifier = modifier
+    )
+}
+
+@Composable
+private fun MainScreenContent(
+    uiState: MainUiState,
+    deviceKeyInput: String,
+    onDeviceKeyChange: (String) -> Unit,
+    onConnectClick: (String) -> Unit,
+    onToggleReceiving: (Boolean) -> Unit,
+    onToggleSending: (Boolean) -> Unit,
+    onDisconnect: () -> Unit,
+    modifier: Modifier = Modifier
+) {
     Box(modifier = modifier.fillMaxSize()) {
         Column(
             modifier = Modifier
@@ -68,27 +97,23 @@ fun MainScreen(
                 uiState.isConnected -> {
                     ConnectedContent(
                         uiState = uiState,
-                        onToggleReceiving = viewModel::toggleReceiving,
-                        onToggleSending = viewModel::toggleSending,
-                        onDisconnect = viewModel::onDisconnectClick
+                        onToggleReceiving = onToggleReceiving,
+                        onToggleSending = onToggleSending,
+                        onDisconnect = onDisconnect
                     )
                 }
                 uiState.isAutoConnecting || uiState.isReconnecting -> {
                     AutoConnectingContent(
                         statusText = uiState.connectionStatusText,
                         canDisconnect = uiState.canDisconnect,
-                        onDisconnect = if (uiState.canDisconnect) viewModel::onDisconnectClick else null
+                        onDisconnect = if (uiState.canDisconnect) onDisconnect else null
                     )
                 }
                 else -> {
                     DeviceKeyEntryContent(
                         deviceKey = deviceKeyInput,
-                        onDeviceKeyChange = { deviceKeyInput = it },
-                        onConnectClick = {
-                            if (deviceKeyInput.isNotBlank()) {
-                                viewModel.onConnectClick(deviceKeyInput)
-                            }
-                        },
+                        onDeviceKeyChange = onDeviceKeyChange,
+                        onConnectClick = { onConnectClick(deviceKeyInput) },
                         statusText = uiState.connectionStatusText,
                         isConnecting = uiState.isConnecting
                     )
@@ -237,3 +262,65 @@ private fun DeviceKeyEntryContent(
     }
 }
 
+@Preview(showBackground = true)
+@Composable
+private fun MainScreenConnectedPreview() {
+    SomlengTheme {
+        MainScreenContent(
+            uiState = MainUiState(
+                isConnected = true,
+                receivingEnabled = true,
+                sendingEnabled = false,
+                connectionStatusText = "Online",
+                deviceKey = "device-key-123"
+            ),
+            deviceKeyInput = "",
+            onDeviceKeyChange = {},
+            onConnectClick = { _ -> },
+            onToggleReceiving = {},
+            onToggleSending = {},
+            onDisconnect = {},
+            modifier = Modifier.fillMaxSize()
+        )
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun MainScreenAutoConnectingPreview() {
+    SomlengTheme {
+        MainScreenContent(
+            uiState = MainUiState(
+                isAutoConnecting = true,
+                connectionStatusText = "Connecting...",
+                deviceKey = "device-key-123"
+            ),
+            deviceKeyInput = "device-key-123",
+            onDeviceKeyChange = {},
+            onConnectClick = { _ -> },
+            onToggleReceiving = {},
+            onToggleSending = {},
+            onDisconnect = {},
+            modifier = Modifier.fillMaxSize()
+        )
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun MainScreenDeviceKeyPreview() {
+    SomlengTheme {
+        MainScreenContent(
+            uiState = MainUiState(
+                deviceKey = null
+            ),
+            deviceKeyInput = "",
+            onDeviceKeyChange = {},
+            onConnectClick = { _ -> },
+            onToggleReceiving = {},
+            onToggleSending = {},
+            onDisconnect = {},
+            modifier = Modifier.fillMaxSize()
+        )
+    }
+}

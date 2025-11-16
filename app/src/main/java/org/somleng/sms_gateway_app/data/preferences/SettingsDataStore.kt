@@ -13,13 +13,14 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import java.io.IOException
 
+// Declare an extension property on Context
 private val Context.dataStore by preferencesDataStore(name = "settings")
 
 private object Keys {
     val DEVICE_KEY = stringPreferencesKey("device_key")
+    val PHONE_NUMBER = stringPreferencesKey("phone_number")
     val RECEIVING_ENABLED = booleanPreferencesKey("receiving_enabled")
     val SENDING_ENABLED = booleanPreferencesKey("sending_enabled")
-    val PHONE_NUMBER = stringPreferencesKey("phone_number")
 }
 
 class SettingsDataStore(private val context: Context) {
@@ -32,72 +33,54 @@ class SettingsDataStore(private val context: Context) {
             }
         }
 
-    val deviceKey: Flow<String?> = safeData.map { preferences ->
-        preferences[Keys.DEVICE_KEY]
+    private fun <T> optionalPreferenceFlow(key: Preferences.Key<T>): Flow<T?> {
+        return safeData.map { preferences -> preferences[key] }
     }
 
-    val receivingEnabled: Flow<Boolean> = safeData.map { preferences ->
-        preferences[Keys.RECEIVING_ENABLED] ?: true
+    private fun <T> preferenceFlow(key: Preferences.Key<T>, defaultValue: T): Flow<T> {
+        return safeData.map { preferences -> preferences[key] ?: defaultValue }
     }
 
-    val sendingEnabled: Flow<Boolean> = safeData.map { preferences ->
-        preferences[Keys.SENDING_ENABLED] ?: true
-    }
-
-    val phoneNumber: Flow<String?> = safeData.map { preferences ->
-        preferences[Keys.PHONE_NUMBER]
-    }
-
-    suspend fun setDeviceKey(deviceKey: String) {
+    private suspend fun <T> setPreference(key: Preferences.Key<T>, value: T) {
         context.dataStore.edit { settings ->
-            settings[Keys.DEVICE_KEY] = deviceKey
+            settings[key] = value
         }
     }
 
-    suspend fun clearDeviceKey() {
+    private suspend fun clearPreference(key: Preferences.Key<*>) {
         context.dataStore.edit { settings ->
-            settings.remove(Keys.DEVICE_KEY)
+            settings.remove(key)
         }
     }
 
-    suspend fun setReceivingEnabled(enabled: Boolean) {
-        context.dataStore.edit { settings ->
-            settings[Keys.RECEIVING_ENABLED] = enabled
-        }
-    }
+    val deviceKey: Flow<String?> = optionalPreferenceFlow(Keys.DEVICE_KEY)
 
-    suspend fun setSendingEnabled(enabled: Boolean) {
-        context.dataStore.edit { settings ->
-            settings[Keys.SENDING_ENABLED] = enabled
-        }
-    }
+    val phoneNumber: Flow<String?> = optionalPreferenceFlow(Keys.PHONE_NUMBER)
 
-    suspend fun setPhoneNumber(phoneNumber: String) {
-        context.dataStore.edit { settings ->
-            settings[Keys.PHONE_NUMBER] = phoneNumber
-        }
-    }
+    val receivingEnabled: Flow<Boolean> = preferenceFlow(Keys.RECEIVING_ENABLED, true)
 
-    suspend fun clearPhoneNumber() {
-        context.dataStore.edit { settings ->
-            settings.remove(Keys.PHONE_NUMBER)
-        }
-    }
+    val sendingEnabled: Flow<Boolean> = preferenceFlow(Keys.SENDING_ENABLED, true)
 
-    suspend fun getDeviceKey(): String? {
-        return deviceKey.first()
-    }
+    suspend fun setDeviceKey(deviceKey: String) = setPreference(Keys.DEVICE_KEY, deviceKey)
 
-    suspend fun isReceivingEnabled(): Boolean {
-        return receivingEnabled.first()
-    }
+    suspend fun clearDeviceKey() = clearPreference(Keys.DEVICE_KEY)
 
-    suspend fun isSendingEnabled(): Boolean {
-        return sendingEnabled.first()
-    }
+    suspend fun setReceivingEnabled(enabled: Boolean) =
+        setPreference(Keys.RECEIVING_ENABLED, enabled)
 
-    suspend fun getPhoneNumber(): String? {
-        return phoneNumber.first()
-    }
+    suspend fun setSendingEnabled(enabled: Boolean) =
+        setPreference(Keys.SENDING_ENABLED, enabled)
+
+    suspend fun setPhoneNumber(phoneNumber: String) =
+        setPreference(Keys.PHONE_NUMBER, phoneNumber)
+
+    suspend fun clearPhoneNumber() = clearPreference(Keys.PHONE_NUMBER)
+
+    suspend fun getDeviceKey(): String? = deviceKey.first()
+
+    suspend fun isReceivingEnabled(): Boolean = receivingEnabled.first()
+
+    suspend fun isSendingEnabled(): Boolean = sendingEnabled.first()
+
+    suspend fun getPhoneNumber(): String? = phoneNumber.first()
 }
-
