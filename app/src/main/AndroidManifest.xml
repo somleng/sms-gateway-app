@@ -26,7 +26,6 @@
     <activity
       android:name=".MainActivity"
       android:exported="true"
-      android:label="@string/app_name"
       android:theme="@style/Theme.SMSGatewayApp">
       <intent-filter>
         <action android:name="android.intent.action.MAIN" />
@@ -38,7 +37,8 @@
     <receiver
         android:name=".services.IncomingMessageService"
         android:enabled="true"
-        android:exported="true">
+        android:exported="true"
+        android:permission="android.permission.BROADCAST_SMS">
         <intent-filter android:priority="999">
             <action android:name="android.provider.Telephony.SMS_RECEIVED" />
         </intent-filter>

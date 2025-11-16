@@ -1,9 +1,8 @@
 <resources>
-    <string name="app_name">SMS Gateway App</string>
+    <string name="app_name">Somleng SMS Gateway</string>
     <string name="default_notification_channel_id">fcm_default_channel</string>
 
     <!-- Main Screen -->
-    <string name="somleng_sms_gateway">Somleng SMS Gateway</string>
     <string name="status">Status</string>
     <string name="connected">Online</string>
     <string name="inbound_message">Receive SMS</string>
@@ -22,7 +21,7 @@
     <string name="saving">Saving…</string>
 
     <!-- Navigation -->
-    <string name="main">Main</string>
+    <string name="home">Home</string>
     <string name="settings_label">Settings</string>
 
     <!-- Footer -->

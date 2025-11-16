@@ -26,6 +26,7 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import org.somleng.sms_gateway_app.BuildConfig
 import org.somleng.sms_gateway_app.R
 import org.somleng.sms_gateway_app.data.preferences.SettingsDataStore
 
@@ -41,7 +42,7 @@ class ActionCableService private constructor(private val context: Context) {
     private val _connectionState = MutableStateFlow(ConnectionState.DISCONNECTED)
     val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
     private val smsManager: SmsManager by lazy {
-        context.getSystemService<SmsManager>() ?: SmsManager.getDefault()
+        context.getSystemService(SmsManager::class.java)
     }
 
     private val settingsDataStore = SettingsDataStore(context)
@@ -168,8 +169,7 @@ class ActionCableService private constructor(private val context: Context) {
     }
 
     private fun resolveSomlengUri(): URI {
-        val url = context.getString(R.string.somleng_ws_url)
-        return URI(url)
+        return URI(BuildConfig.SOMLENG_WS_URL)
     }
 
     private fun subscribeToConnectionEvents(consumer: Consumer): Subscription {
