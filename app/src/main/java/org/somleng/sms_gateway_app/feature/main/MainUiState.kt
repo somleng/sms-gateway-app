@@ -11,25 +11,21 @@ data class MainUiState(
     val connectionPhase: ConnectionPhase = ConnectionPhase.Idle,
     val receivingEnabled: Boolean = true,
     val sendingEnabled: Boolean = true,
-    val statusMessage: String = "Not configured",
-    val deviceKey: String? = null
+    val deviceKey: String? = null,
+    val deviceKeyInput: String = ""
 ) {
+    val isConnectionIdle: Boolean
+        get() = connectionPhase is ConnectionPhase.Idle
+
     val isConnected: Boolean
         get() = connectionPhase is ConnectionPhase.Connected
 
     val isConnecting: Boolean
         get() = connectionPhase is ConnectionPhase.Connecting
 
-    val showDeviceKeyForm: Boolean
-        get() = connectionPhase is ConnectionPhase.Idle || connectionPhase is ConnectionPhase.Failed
+    val isConnectionFailed: Boolean
+        get() = connectionPhase is ConnectionPhase.Failed
 
     val canDisconnect: Boolean
-        get() = deviceKey != null
-
-    val showConnectingView: Boolean
-        get() = connectionPhase is ConnectionPhase.Connecting
-
-    val showConnectedView: Boolean
-        get() = connectionPhase is ConnectionPhase.Connected
+        get() = !deviceKey.isNullOrBlank()
 }
-

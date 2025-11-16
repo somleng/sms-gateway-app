@@ -51,10 +51,10 @@ fun AppScaffold(
                             } else {
                                 Icons.Outlined.Home
                             },
-                            contentDescription = stringResource(R.string.home)
+                            contentDescription = stringResource(R.string.home_nav)
                         )
                     },
-                    label = { Text(stringResource(R.string.home)) }
+                    label = { Text(stringResource(R.string.home_nav)) }
                 )
                 NavigationBarItem(
                     selected = currentRoute == Routes.SETTINGS,
@@ -66,10 +66,10 @@ fun AppScaffold(
                             } else {
                                 Icons.Outlined.Settings
                             },
-                            contentDescription = stringResource(R.string.settings_label)
+                            contentDescription = stringResource(R.string.settings_nav)
                         )
                     },
-                    label = { Text(stringResource(R.string.settings_label)) }
+                    label = { Text(stringResource(R.string.settings_nav)) }
                 )
             }
         },

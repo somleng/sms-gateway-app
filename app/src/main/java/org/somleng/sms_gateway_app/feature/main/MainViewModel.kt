@@ -26,13 +26,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _uiState = MutableStateFlow(MainUiState())
     val ui: StateFlow<MainUiState> = _uiState.asStateFlow()
-    private val heartbeatIntervalMs = 30_000L
-    private var heartbeatJob: Job? = null
 
+    private val heartbeatIntervalMs = 10_000L
+    private var heartbeatJob: Job? = null
     private var connectJob: Job? = null
     private val reconnectBaseDelayMs = 3_000L
     private val reconnectMaxDelayMs = 15_000L
     private val maxRetryAttempts = 3
+
     private val manualDisconnect = AtomicBoolean(false)
 
     init {
@@ -44,8 +45,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     override fun onCleared() {
         super.onCleared()
         stopHeartbeat()
-        cancelConnect()
-        actionCableService.disconnect()
+        disconnect()
     }
 
     fun onConnectClick(deviceKey: String) {
@@ -54,7 +54,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun onDisconnectClick() {
-        disconnect()
+        manualDisconnect.set(true)
+        viewModelScope.launch {
+            disconnect()
+
+            _uiState.update {
+                it.copy(
+                    connectionPhase = ConnectionPhase.Idle,
+                )
+            }
+        }
+    }
+
+    fun onDeviceKeyInputChange(text: String) {
+        _uiState.update { it.copy(deviceKeyInput = text) }
     }
 
     fun toggleReceiving(enabled: Boolean) {
@@ -74,41 +87,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun connect(deviceKey: String) {
         manualDisconnect.set(false)
         val trimmedKey = deviceKey.trim()
-        if (trimmedKey.isEmpty()) {
-            _uiState.update { it.copy(statusMessage = "Device key is required") }
-            return
-        }
 
         viewModelScope.launch {
             settingsDataStore.setDeviceKey(trimmedKey)
             _uiState.update {
                 it.copy(
                     deviceKey = trimmedKey,
+                    deviceKeyInput = trimmedKey,
                     connectionPhase = ConnectionPhase.Connecting(0),
-                    statusMessage = "Connecting"
                 )
             }
             connectWithRetry(trimmedKey, maxRetryAttempts)
         }
     }
 
-    private fun disconnect() {
-        manualDisconnect.set(true)
-        viewModelScope.launch {
-            cancelConnect()
-            actionCableService.disconnect()
-
-            _uiState.update {
-                it.copy(
-                    connectionPhase = ConnectionPhase.Idle,
-                    statusMessage = "Disconnected"
-                )
-            }
-        }
-    }
-
     private fun connectWithRetry(deviceKey: String, maxAttempts: Int?) {
-        cancelConnect()
+        disconnect()
 
         connectJob = viewModelScope.launch {
             var attempt = 0
@@ -119,7 +113,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _uiState.update {
                     it.copy(
                         connectionPhase = ConnectionPhase.Connecting(attempt),
-                        statusMessage = "Connecting"
                     )
                 }
 
@@ -137,6 +130,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         if (currentState == ActionCableService.ConnectionState.ERROR) {
                             break
                         }
+
+                        // Wait for a bit before pulling the connectionState again
                         delay(500)
                         waitTime += 500
                     }
@@ -145,6 +140,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     Log.e(TAG, "Connection attempt $attempt failed", error)
                 }
 
+                // Infinite retry or hasn't reached max attempts
                 if (maxAttempts == null || attempt < maxAttempts) {
                     val delayMillis = (reconnectBaseDelayMs * attempt).coerceAtMost(reconnectMaxDelayMs)
                     delay(delayMillis)
@@ -156,30 +152,31 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _uiState.update {
                     it.copy(
                         connectionPhase = ConnectionPhase.Failed,
-                        statusMessage = "Failed"
                     )
                 }
             }
         }
     }
 
-    private fun cancelConnect() {
-        connectJob?.cancel()
-        connectJob = null
+    private fun disconnect() {
+        stopHeartbeat()
+        actionCableService.disconnect()
     }
 
     private fun observeStoredDeviceKey() {
         viewModelScope.launch {
             settingsDataStore.deviceKey.collect { storedKey ->
-                val currentPhase = _uiState.value.connectionPhase
-
                 _uiState.update { current ->
-                    current.copy(deviceKey = storedKey)
+                    val shouldSyncInput = storedKey != current.deviceKey
+                    current.copy(
+                        deviceKey = storedKey,
+                        deviceKeyInput = if (shouldSyncInput) storedKey.orEmpty() else current.deviceKeyInput
+                    )
                 }
 
                 // Auto-connect on app start if we have a stored key and not already connected/connecting
-                if (storedKey != null &&
-                    currentPhase is ConnectionPhase.Idle &&
+                if (!storedKey.isNullOrBlank() &&
+                    _uiState.value.isConnectionIdle &&
                     actionCableService.connectionState.value == ActionCableService.ConnectionState.DISCONNECTED
                 ) {
                     Log.d(TAG, "Auto-connecting with stored device key")
@@ -187,7 +184,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     _uiState.update {
                         it.copy(
                             connectionPhase = ConnectionPhase.Connecting(0),
-                            statusMessage = "Connecting"
                         )
                     }
                     connectWithRetry(storedKey, maxRetryAttempts)
@@ -224,10 +220,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             _uiState.update {
                                 it.copy(
                                     connectionPhase = ConnectionPhase.Connected,
-                                    statusMessage = "Online"
                                 )
                             }
-                            cancelConnect()
+                            stopHeartbeat()
                             startHeartbeat()
                         }
                     }
@@ -246,7 +241,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             _uiState.update {
                                 it.copy(
                                     connectionPhase = ConnectionPhase.Connecting(0),
-                                    statusMessage = "Connecting"
                                 )
                             }
                             manualDisconnect.set(false)
@@ -255,11 +249,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             _uiState.update {
                                 it.copy(
                                     connectionPhase = ConnectionPhase.Idle,
-                                    statusMessage = if (state == ActionCableService.ConnectionState.ERROR) {
-                                        "Failed"
-                                    } else {
-                                        "Disconnected"
-                                    }
                                 )
                             }
                         }

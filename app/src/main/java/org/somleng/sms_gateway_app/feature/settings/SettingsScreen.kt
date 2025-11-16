@@ -58,18 +58,18 @@ private fun SettingsScreenContent(
             verticalArrangement = Arrangement.Top
         ) {
             PhoneNumberField(
-                value = uiState.phoneNumber,
+                value = uiState.phoneNumberInput,
                 onValueChange = onPhoneChange,
                 label = stringResource(R.string.phone_number_input),
                 supportingText = stringResource(R.string.phone_number_hint),
-                isError = uiState.phoneNumber.isNotEmpty() && !uiState.isValid,
+                isError = uiState.phoneNumberInput.isNotEmpty() && !uiState.isValid,
                 modifier = Modifier.fillMaxWidth()
             )
 
             Spacer(modifier = Modifier.height(16.dp))
 
             PrimaryButton(
-                text = stringResource(R.string.save_button),
+                text = stringResource(R.string.save),
                 onClick = onSave,
                 enabled = uiState.canSave,
                 isLoading = uiState.isSaving,
@@ -91,8 +91,8 @@ private fun SettingsScreenPreview() {
     SomlengTheme {
         SettingsScreenContent(
             uiState = SettingsUiState(
-                phoneNumber = "+85512345678",
-                savedPhoneNumber = "+85510123456",
+                phoneNumber = "+85510123456",
+                phoneNumberInput = "+85512345678",
             ),
             onPhoneChange = {},
             onSave = {},

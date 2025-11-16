@@ -26,7 +26,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                 _uiState.update { current ->
                     current.copy(
                         phoneNumber = sanitizedPhoneNumber,
-                        savedPhoneNumber = sanitizedPhoneNumber,
+                        phoneNumberInput = sanitizedPhoneNumber,
                     )
                 }
             }
@@ -38,13 +38,13 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
         _uiState.update { current ->
             current.copy(
-                phoneNumber = normalizedNumber,
+                phoneNumberInput = normalizedNumber,
             )
         }
     }
 
     fun onSave() {
-        val normalizedNumber = _uiState.value.phoneNumber.trim()
+        val normalizedNumber = _uiState.value.phoneNumberInput.trim()
         if (!_uiState.value.isValid) return
 
         viewModelScope.launch {
@@ -58,7 +58,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                 _uiState.update { current ->
                     current.copy(
                         isSaving = false,
-                        phoneNumber = normalizedNumber,
+                        phoneNumberInput = normalizedNumber,
                     )
                 }
             } catch (error: Exception) {
