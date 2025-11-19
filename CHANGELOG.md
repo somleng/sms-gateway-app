@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/somleng/sms-gateway-app/compare/v0.3.0...v0.4.0) (2025-11-19)
+
+
+### Features
+
+* Support custom server host ([#25](https://github.com/somleng/sms-gateway-app/issues/25)) ([8c4e4cb](https://github.com/somleng/sms-gateway-app/commit/8c4e4cb649011f7b2b9cd924770d0dc48bb08a38))
+
 ## [0.3.0](https://github.com/somleng/sms-gateway-app/compare/v0.2.0...v0.3.0) (2025-11-15)
 
 
