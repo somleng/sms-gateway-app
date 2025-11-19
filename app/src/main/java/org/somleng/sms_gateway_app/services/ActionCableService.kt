@@ -1,8 +1,15 @@
 package org.somleng.sms_gateway_app.services
 
+import android.app.Activity
+import android.app.PendingIntent
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.os.Build
 import android.telephony.SmsManager
 import android.util.Log
+import androidx.core.content.ContextCompat
 import androidx.core.content.getSystemService
 import com.google.firebase.messaging.FirebaseMessaging
 import com.google.gson.JsonElement
@@ -12,6 +19,7 @@ import com.hosopy.actioncable.Channel
 import com.hosopy.actioncable.Consumer
 import com.hosopy.actioncable.Subscription
 import java.net.URI
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.resume
 import kotlin.jvm.Volatile
 import kotlinx.coroutines.CoroutineScope
@@ -47,19 +55,69 @@ class ActionCableService private constructor(private val context: Context) {
 
     private val settingsDataStore = SettingsDataStore(context)
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val pendingIntentRequestCode = AtomicInteger()
 
     private val connectMutex = Mutex()
-    @Volatile private var currentDeviceKey: String? = null
+
+    @Volatile
+    private var currentDeviceKey: String? = null
 
     private var consumer: Consumer? = null
     private var connectionSubscription: Subscription? = null
     private var messageSubscription: Subscription? = null
 
-    suspend fun connect(deviceKey: String) = connectMutex.withLock {
+    private val smsSentReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            val messageId = intent?.getStringExtra(EXTRA_MESSAGE_ID)
+            val phoneNumber = intent?.getStringExtra(EXTRA_PHONE_NUMBER).orEmpty()
+            when (resultCode) {
+                Activity.RESULT_OK -> {
+                    Log.d(TAG, "SMS sent broadcast received for $phoneNumber")
+                    sendDeliveryStatus(messageId, "sent")
+                }
+
+                else -> {
+                    val reason = when (resultCode) {
+                        SmsManager.RESULT_ERROR_GENERIC_FAILURE -> "Generic failure"
+                        SmsManager.RESULT_ERROR_NO_SERVICE -> "No service"
+                        SmsManager.RESULT_ERROR_NULL_PDU -> "Null PDU"
+                        SmsManager.RESULT_ERROR_RADIO_OFF -> "Radio off"
+                        SmsManager.RESULT_ERROR_LIMIT_EXCEEDED -> "Limit exceeded"
+                        SmsManager.RESULT_RIL_RADIO_NOT_AVAILABLE -> "Radio not available"
+                        SmsManager.RESULT_RIL_SIMULTANEOUS_SMS_AND_CALL_NOT_ALLOWED -> "SMS not allowed during call"
+                        SmsManager.RESULT_RIL_SMS_SEND_FAIL_RETRY -> "Send failed, retry suggested"
+                        else -> "Unknown error (code=$resultCode)"
+                    }
+
+                    Log.e(TAG, "SMS send failed for $phoneNumber: $reason")
+                    sendDeliveryStatus(messageId, "failed")
+                }
+            }
+        }
+    }
+
+    private val smsDeliveredReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            val messageId = intent?.getStringExtra(EXTRA_MESSAGE_ID)
+            val phoneNumber = intent?.getStringExtra(EXTRA_PHONE_NUMBER).orEmpty()
+            if (resultCode == Activity.RESULT_OK) {
+                Log.d(TAG, "Delivery confirmed for $phoneNumber")
+                sendDeliveryStatus(messageId, "delivered")
+            } else {
+                Log.w(TAG, "Delivery not confirmed for $phoneNumber (code=$resultCode)")
+            }
+        }
+    }
+
+    init {
+        registerSmsStatusReceivers()
+    }
+
+    suspend fun connect(deviceKey: String, forceReconnect: Boolean = false) = connectMutex.withLock {
         val trimmedKey = deviceKey.trim()
 
         // Idempotent: skip if already connected with same key
-        if (isConnected() && currentDeviceKey == trimmedKey) {
+        if (!forceReconnect && isConnected() && currentDeviceKey == trimmedKey) {
             Log.d(TAG, "Already connected with device key: $trimmedKey")
             return@withLock
         }
@@ -152,7 +210,7 @@ class ActionCableService private constructor(private val context: Context) {
             .onFailure { error -> Log.e(TAG, "Error send message request: $messageId", error) }
     }
 
-    private fun createConsumer(deviceKey: String, deviceToken: String): Consumer {
+    private suspend fun createConsumer(deviceKey: String, deviceToken: String): Consumer {
         val options = Consumer.Options().apply {
             reconnection = true
             reconnectionMaxAttempts = 5
@@ -168,8 +226,15 @@ class ActionCableService private constructor(private val context: Context) {
         return ActionCable.createConsumer(targetUri, options)
     }
 
-    private fun resolveSomlengUri(): URI {
-        return URI(BuildConfig.SOMLENG_WS_URL)
+    private suspend fun resolveSomlengUri(): URI {
+        val baseUrl = if (BuildConfig.ENVIRONMENT == "dev") {
+            // In dev builds, use stored server host if available, otherwise fallback to BuildConfig
+            settingsDataStore.getServerHost() ?: BuildConfig.SOMLENG_WS_URL
+        } else {
+            // In production, always use BuildConfig
+            BuildConfig.SOMLENG_WS_URL
+        }
+        return URI("$baseUrl/cable")
     }
 
     private fun subscribeToConnectionEvents(consumer: Consumer): Subscription {
@@ -221,11 +286,13 @@ class ActionCableService private constructor(private val context: Context) {
 
                         sendMessageRequest(messageId)
                     }
+
                     "message_send_request_confirmed" -> {
                         Log.d(TAG, "Received confirmed message from server: $data")
 
                         sendSMS(data)
                     }
+
                     else -> {
                         Log.d(TAG, "Ignoring unsupported message type '$messageType'")
                     }
@@ -265,17 +332,17 @@ class ActionCableService private constructor(private val context: Context) {
     }
 
     private fun sendSms(phoneNumber: String, messageBody: String, messageId: String?) {
+        val sentIntent = createSmsPendingIntent(ACTION_SMS_SENT, messageId, phoneNumber)
+        val deliveredIntent = createSmsPendingIntent(ACTION_SMS_DELIVERED, messageId, phoneNumber)
+
         runCatching {
             smsManager.sendTextMessage(
                 phoneNumber,
                 null,
                 messageBody,
-                null,
-                null
+                sentIntent,
+                deliveredIntent
             )
-
-            // TODO: Differentiate between sent vs delivered status by checking the delivery report `sentIntent` vs `deliverIntent`
-            sendDeliveryStatus(messageId, "sent")
 
             Log.d(TAG, "SMS sent to $phoneNumber")
         }.onFailure { error ->
@@ -308,6 +375,35 @@ class ActionCableService private constructor(private val context: Context) {
         serviceScope.coroutineContext.cancelChildren()
     }
 
+    private fun registerSmsStatusReceivers() {
+        ContextCompat.registerReceiver(
+            context,
+            smsSentReceiver,
+            IntentFilter(ACTION_SMS_SENT),
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
+        ContextCompat.registerReceiver(
+            context,
+            smsDeliveredReceiver,
+            IntentFilter(ACTION_SMS_DELIVERED),
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
+    }
+
+    private fun createSmsPendingIntent(action: String, messageId: String?, phoneNumber: String): PendingIntent {
+        val requestCode = pendingIntentRequestCode.getAndIncrement()
+        val intent = Intent(action).apply {
+            setPackage(context.packageName)
+            putExtra(EXTRA_MESSAGE_ID, messageId)
+            putExtra(EXTRA_PHONE_NUMBER, phoneNumber)
+        }
+
+        val flags = PendingIntent.FLAG_UPDATE_CURRENT or
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0
+
+        return PendingIntent.getBroadcast(context, requestCode, intent, flags)
+    }
+
     private fun JsonElement?.safeAsString(): String? {
         return if (this == null || this.isJsonNull) null else runCatching { this.asString }.getOrNull()
     }
@@ -332,6 +428,10 @@ class ActionCableService private constructor(private val context: Context) {
         private const val TAG = "ActionCableService"
         private const val CONNECTION_CHANNEL = "SMSGatewayConnectionChannel"
         private const val MESSAGE_CHANNEL = "SMSMessageChannel"
+        private const val ACTION_SMS_SENT = "org.somleng.sms_gateway_app.ACTION_SMS_SENT"
+        private const val ACTION_SMS_DELIVERED = "org.somleng.sms_gateway_app.ACTION_SMS_DELIVERED"
+        private const val EXTRA_MESSAGE_ID = "extra_message_id"
+        private const val EXTRA_PHONE_NUMBER = "extra_phone_number"
 
         private const val HEADER_DEVICE_KEY = "X-Device-Key"
         private const val HEADER_DEVICE_TOKEN = "X-Device-Token"

@@ -9,13 +9,18 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import org.somleng.sms_gateway_app.BuildConfig
 import org.somleng.sms_gateway_app.data.preferences.SettingsDataStore
 
 class SettingsViewModel(application: Application) : AndroidViewModel(application) {
 
     private val settingsDataStore = SettingsDataStore(application.applicationContext)
 
-    private val _uiState = MutableStateFlow(SettingsUiState())
+    private val _uiState = MutableStateFlow(
+        SettingsUiState(
+            isDev = BuildConfig.ENVIRONMENT == "dev"
+        )
+    )
     val ui: StateFlow<SettingsUiState> = _uiState.asStateFlow()
 
     init {
@@ -27,6 +32,19 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                     current.copy(
                         phoneNumber = sanitizedPhoneNumber,
                         phoneNumberInput = sanitizedPhoneNumber,
+                    )
+                }
+            }
+        }
+
+        viewModelScope.launch {
+            settingsDataStore.serverHost.collect { storedHost ->
+                val serverHost = storedHost ?: BuildConfig.SOMLENG_WS_URL
+
+                _uiState.update { current ->
+                    current.copy(
+                        serverHost = serverHost,
+                        serverHostInput = serverHost,
                     )
                 }
             }
@@ -43,8 +61,17 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    fun onServerChange(text: String) {
+        _uiState.update { current ->
+            current.copy(
+                serverHostInput = text.trim(),
+            )
+        }
+    }
+
     fun onSave() {
         val normalizedNumber = _uiState.value.phoneNumberInput.trim()
+        val serverHostInput = _uiState.value.serverHostInput.trim()
         if (!_uiState.value.isValid) return
 
         viewModelScope.launch {
@@ -55,14 +82,20 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
                 settingsDataStore.setPhoneNumber(normalizedNumber)
 
+                // Only save server host in dev builds
+                if (_uiState.value.isDev && serverHostInput.isNotEmpty()) {
+                    settingsDataStore.setServerHost(serverHostInput)
+                }
+
                 _uiState.update { current ->
                     current.copy(
                         isSaving = false,
                         phoneNumberInput = normalizedNumber,
+                        serverHostInput = serverHostInput,
                     )
                 }
             } catch (error: Exception) {
-                Log.e(TAG, "Failed to save phone number", error)
+                Log.e(TAG, "Failed to save settings", error)
                 _uiState.update { current ->
                     current.copy(isSaving = false)
                 }
