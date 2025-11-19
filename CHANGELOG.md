@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/somleng/sms-gateway-app/compare/v0.4.0...v0.4.1) (2025-11-19)
+
+
+### Bug Fixes
+
+* network security config for production release ([0a03fdb](https://github.com/somleng/sms-gateway-app/commit/0a03fdb94a167dd208380a931f4afaeeb1aaa696))
+
 ## [0.4.0](https://github.com/somleng/sms-gateway-app/compare/v0.3.0...v0.4.0) (2025-11-19)
 
 
