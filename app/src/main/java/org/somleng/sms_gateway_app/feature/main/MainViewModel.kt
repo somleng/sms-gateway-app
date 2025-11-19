@@ -110,6 +110,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             while ((maxAttempts == null || attempt < maxAttempts) && isActive) {
                 attempt++
 
+                // if the connection is already connected, update the UI
+                if (actionCableService.isConnected()) {
+                    _uiState.update {
+                        it.copy(connectionPhase = ConnectionPhase.Connected)
+                    }
+                    return@launch
+                }
+
                 _uiState.update {
                     it.copy(
                         connectionPhase = ConnectionPhase.Connecting(attempt),
@@ -125,6 +133,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     while (waitTime < maxWaitTime && isActive) {
                         val currentState = actionCableService.connectionState.value
                         if (currentState == ActionCableService.ConnectionState.CONNECTED) {
+                            _uiState.update {
+                                it.copy(connectionPhase = ConnectionPhase.Connected)
+                            }
                             return@launch
                         }
                         if (currentState == ActionCableService.ConnectionState.ERROR) {
