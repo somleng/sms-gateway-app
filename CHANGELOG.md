@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1](https://github.com/somleng/sms-gateway-app/compare/v0.5.0...v0.5.1) (2025-11-22)
+
+
+### Bug Fixes
+
+* release build (apk) should include version name in its filename ([#31](https://github.com/somleng/sms-gateway-app/issues/31)) ([2a127f9](https://github.com/somleng/sms-gateway-app/commit/2a127f9dc2e85e17cde65af3e548def36c165e1f))
+
 ## [0.5.0](https://github.com/somleng/sms-gateway-app/compare/v0.4.1...v0.5.0) (2025-11-22)
 
 

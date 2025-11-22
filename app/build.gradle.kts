@@ -12,8 +12,8 @@ android {
     applicationId = "org.somleng.sms_gateway_app"
     minSdk = 24
     targetSdk = 36
-    versionCode = 7
-    versionName = "0.5.0" // x-release-please-version
+    versionCode = 8
+    versionName = "0.5.1" // x-release-please-version
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
