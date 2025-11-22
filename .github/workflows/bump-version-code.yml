@@ -24,8 +24,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.SOMLENG_PERSONAL_ACCESS_TOKEN }}
         run: |
-          git config user.name "GitHub Actions"
-          git config user.email "github-actions@github.com"
+          git config user.name "dwilkie"
+          git config user.email "dwilkie@gmail.com"
           git remote set-url origin https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git
           git add app/build.gradle.kts
           git commit -m "Bump version code"
