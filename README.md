@@ -21,6 +21,7 @@ The app acts as a bridge between the Somleng platform and your mobile network, a
 
 - [Installation Guide](docs/installation.md)
 - [Usage Guide](docs/usage.md)
+- [Architecture](docs/architecture.md)
 
 ## License
 
