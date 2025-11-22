@@ -57,6 +57,10 @@ This temporary change allows your device to install the SMS Gateway APK that you
 3. After installation completes, **open the SMS Gateway app**.
 4. When prompted, grant the requested permissions (e.g., SMS, notifications). These are required for the app to function correctly as an SMS gateway.
 
+
+<img src="../assets/installation/05-allow-push-notifications.png" alt="Open App Info for the SMS Gateway app" width="300" />
+
+
 Once the initial permissions are granted, you will need to enable the restricted SMS permission in the system App Info settings (next sections).
 
 ---
@@ -68,9 +72,9 @@ Once the initial permissions are granted, you will need to enable the restricted
 3. In the app information screen, open **More settings** (this may be displayed as a menu icon or an "Advanced" section).
 4. Tap **Allow restricted settings**.
 
-<img src="../assets/installation/05-app-info-settings.png" alt="Open App Info for the SMS Gateway app" width="300" />
+<img src="../assets/installation/06-app-info-settings.png" alt="Open App Info for the SMS Gateway app" width="300" />
 
-<img src="../assets/installation/06-allow-restricted-settings.png" alt='Enable "Allow restricted settings"' width="300" />
+<img src="../assets/installation/06.1-allow-restricted-settings.png" alt='Enable "Allow restricted settings"' width="300" />
 
 Enabling restricted settings is required in order to grant the app access to restricted permissions like SMS.
 
@@ -85,7 +89,7 @@ Enabling restricted settings is required in order to grant the app access to res
 2. Tap **SMS**.
 3. Change the setting to **Allow**.
 
-<img src="../assets/installation/08-allowed-SMS.png" alt='Set SMS permission to "Allow"' width="300" />
+<img src="../assets/installation/07.1-allowed-SMS.png" alt='Set SMS permission to "Allow"' width="300" />
 
 Granting SMS permission ensures the SMS Gateway app can send and receive SMS messages as required by your configuration.
 
@@ -96,8 +100,8 @@ Granting SMS permission ensures the SMS Gateway app can send and receive SMS mes
 After you complete the steps above:
 
 - **Re-enable Play Protect** (optional but recommended): Return to **Play Store → Play Protect settings** and turn protection options back on.
-- **Verify connectivity**: Open the SMS Gateway app and confirm that it connects to your configured server/endpoint as expected.
-- **Test SMS**: Send a test SMS through your backend or configured workflow to ensure messages are successfully sent and, if applicable, received.
+- **Verify connectivity**: Open the SMS Gateway app and confirm that it connects to your configured server/endpoint as expected with device key.
+- **Test SMS**: Send a test SMS via your backend or the Somleng API to ensure everything is working as expected.
 
 If you encounter any issues during installation or configuration, double-check that:
 
