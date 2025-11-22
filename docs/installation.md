@@ -1,4 +1,4 @@
-## SMS Gateway App Installation Guide
+## Installation Guide
 
 This document describes how to install and configure the SMS Gateway Android app. The app needs access to **restricted permissions** (in particular, SMS) so that it can reliably send and receive messages on behalf of your server. Because the app is distributed as an APK outside the Google Play Store, there are additional one-time steps required to allow installation and to grant the necessary permissions.
 
