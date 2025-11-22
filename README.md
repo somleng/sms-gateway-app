@@ -14,7 +14,7 @@ Transform your Android smartphone into a powerful SMS gateway with the Somleng S
 The app acts as a bridge between the Somleng platform and your mobile network, allowing you to leverage your device's SMS capabilities for automated messaging workflows.
 
 <p align="center">
-  <img src="assets/screenshot.png" alt="App Screenshot" width="300">
+  <img src="assets/app/screenshot.png" alt="App Screenshot" width="300">
 </p>
 
 ## 📖 Usage
