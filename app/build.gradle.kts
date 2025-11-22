@@ -68,6 +68,15 @@ android {
     compose = true
     buildConfig = true
   }
+
+  applicationVariants.all {
+    val variant = this
+    outputs.all {
+      if (this is com.android.build.gradle.internal.api.BaseVariantOutputImpl) {
+        outputFileName = "somleng-sms-gateway-v${variant.versionName}.apk"
+      }
+    }
+  }
 }
 
 dependencies {
