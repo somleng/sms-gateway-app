@@ -17,44 +17,10 @@ The app acts as a bridge between the Somleng platform and your mobile network, a
   <img src="assets/app/screenshot.png" alt="App Screenshot" width="300">
 </p>
 
-## 📖 Usage
+## Documentation
 
-### Initial Setup
-1. **Launch the App**: Open the Somleng SMS Gateway app on your device
-2. **Enter Device Key**: Input your device key from the Somleng dashboard
-3. **Connect**: Tap "Connect" to establish connection with the Somleng platform
-4. **Grant Permissions**: Allow SMS permissions when prompted
-
-### Managing SMS Gateway
-Once connected, you can:
-- **Toggle Receiving**: Enable/disable incoming SMS processing
-- **Toggle Sending**: Enable/disable outgoing SMS functionality
-- **Monitor Status**: View real-time connection status
-- **Disconnect**: Safely disconnect from the platform
-
-### Finding Your Device Key
-1. Log into your account on Somleng.
-2. Navigate to SMS Gateways
-3. Create a new gateway or select an existing one
-4. Copy the device key for use in the app
-
-## ⚙️ Environment Configuration
-
-The Android module now defines dedicated product flavors for `dev`, `staging`, and `production`. Each flavor can maintain its own Firebase configuration, network security rules, resources, and URLs.
-
-- **Flavor selection**: Use the *Build Variants* panel in Android Studio and choose among `devDebug`, `stagingRelease`, etc., or call Gradle tasks such as `./gradlew assembleDevDebug`.
-- **Firebase**: Place a `google-services.json` file inside `app/src/<flavor>/` (for example `app/src/dev/google-services.json`). Each flavor must have its own file before you can build or publish that variant.
-- **Somleng endpoint**: Update `app/src/<flavor>/res/values/config.xml` with the websocket URL that corresponds to the environment.
-- **Network security**: Adjust `app/src/<flavor>/res/xml/network_security_config.xml` if the allowed domains or cleartext requirements differ between environments.
-- **Runtime flag**: Access `BuildConfig.ENVIRONMENT` in Kotlin if you need to branch on the active flavor at runtime.
-- **Default variant**: The `dev` flavor is marked as the default, so Android Studio will select `devDebug` for fresh checkouts unless you pick a different build variant.
-
-### Release Signing
-
-Release builds are automatically signed on CI using the configured keystore. Local debug builds do not require any signing configuration.
-
-- Building release variants (`assembleDevRelease`, `assembleProductionRelease`)
-- The required environment variables are present (`ANDROID_KEYSTORE_PATH`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_ALIAS_PASSWORD`)
+- [Installation Guide](docs/installation.md)
+- [Usage Guide](docs/usage.md)
 
 ## License
 
