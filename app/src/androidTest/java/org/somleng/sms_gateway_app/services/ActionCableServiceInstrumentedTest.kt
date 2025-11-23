@@ -24,7 +24,6 @@ import org.junit.runner.RunWith
 class ActionCableServiceInstrumentedTest {
 
     private lateinit var context: Context
-    private lateinit var tokenProvider: DeviceTokenProvider
     private lateinit var settings: GatewaySettings
     private lateinit var smsDispatcher: SmsDispatcher
     private lateinit var deliveryStatusSink: DeliveryStatusSink
@@ -33,19 +32,16 @@ class ActionCableServiceInstrumentedTest {
     @Before
     fun setup() {
         context = ApplicationProvider.getApplicationContext()
-        tokenProvider = mockk()
         settings = mockk()
         smsDispatcher = mockk(relaxed = true)
         deliveryStatusSink = mockk(relaxed = true)
 
-        coEvery { tokenProvider.fetchToken() } returns Result.success("test-token")
         coEvery { settings.isReceivingEnabled() } returns true
         coEvery { settings.isSendingEnabled() } returns true
         coEvery { settings.getServerHost() } returns null
 
         service = ActionCableService(
             context = context,
-            tokenProvider = tokenProvider,
             settings = settings,
             smsDispatcher = smsDispatcher,
             deliveryStatusSink = deliveryStatusSink,

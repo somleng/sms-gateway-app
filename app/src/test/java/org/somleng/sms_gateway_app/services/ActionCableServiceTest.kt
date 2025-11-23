@@ -27,7 +27,6 @@ import org.robolectric.annotation.Config
 class ActionCableServiceTest {
 
     private lateinit var context: Context
-    private lateinit var tokenProvider: DeviceTokenProvider
     private lateinit var settings: GatewaySettings
     private lateinit var smsDispatcher: SmsDispatcher
     private lateinit var deliveryStatusSink: DeliveryStatusSink
@@ -38,7 +37,6 @@ class ActionCableServiceTest {
     @Before
     fun setup() {
         context = ApplicationProvider.getApplicationContext()
-        tokenProvider = mockk()
         settings = mockk()
         smsDispatcher = mockk(relaxed = true)
         deliveryStatusSink = mockk(relaxed = true)
@@ -47,7 +45,6 @@ class ActionCableServiceTest {
 
         service = ActionCableService(
             context = context,
-            tokenProvider = tokenProvider,
             settings = settings,
             smsDispatcher = smsDispatcher,
             deliveryStatusSink = deliveryStatusSink,

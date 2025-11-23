@@ -10,11 +10,10 @@ interface GatewaySettings {
     suspend fun isReceivingEnabled(): Boolean
     suspend fun isSendingEnabled(): Boolean
     suspend fun getServerHost(): String?
+    suspend fun getPhoneNumber(): String?
+    suspend fun getDeviceKey(): String?
 }
 
-/**
- * Default implementation backed by SettingsDataStore.
- */
 class DataStoreGatewaySettings(private val context: Context) : GatewaySettings {
     private val settingsDataStore = SettingsDataStore(context)
 
@@ -29,5 +28,14 @@ class DataStoreGatewaySettings(private val context: Context) : GatewaySettings {
     override suspend fun getServerHost(): String? {
         return settingsDataStore.getServerHost()
     }
+
+    override suspend fun getPhoneNumber(): String? {
+        return settingsDataStore.getPhoneNumber()
+    }
+
+    override suspend fun getDeviceKey(): String? {
+        return settingsDataStore.getDeviceKey()
+    }
 }
+
 

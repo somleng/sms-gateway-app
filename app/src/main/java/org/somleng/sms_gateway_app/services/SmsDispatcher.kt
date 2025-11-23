@@ -18,9 +18,6 @@ interface SmsDispatcher {
     )
 }
 
-/**
- * Default implementation using Android's SmsManager.
- */
 class AndroidSmsDispatcher(private val context: Context) : SmsDispatcher {
     private val smsManager: SmsManager by lazy {
         context.getSystemService(SmsManager::class.java)
@@ -42,4 +39,3 @@ class AndroidSmsDispatcher(private val context: Context) : SmsDispatcher {
         )
     }
 }
-

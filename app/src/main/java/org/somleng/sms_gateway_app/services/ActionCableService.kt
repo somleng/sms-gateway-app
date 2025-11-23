@@ -12,7 +12,6 @@ import android.util.Log
 import androidx.annotation.VisibleForTesting
 import androidx.core.content.ContextCompat
 import androidx.core.content.getSystemService
-import com.google.firebase.messaging.FirebaseMessaging
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.hosopy.actioncable.ActionCable
@@ -22,7 +21,6 @@ import com.hosopy.actioncable.Subscription
 import java.net.URI
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.CoroutineContext
-import kotlin.coroutines.resume
 import kotlin.jvm.Volatile
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -32,7 +30,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -50,7 +47,6 @@ class ActionCableService private constructor(
      */
     @VisibleForTesting
     internal data class Dependencies(
-        val tokenProvider: DeviceTokenProvider = FirebaseDeviceTokenProvider(),
         val settings: GatewaySettings? = null,
         val smsDispatcher: SmsDispatcher? = null,
         val deliveryStatusSink: DeliveryStatusSink? = null,
@@ -65,7 +61,6 @@ class ActionCableService private constructor(
     @VisibleForTesting
     internal constructor(
         context: Context,
-        tokenProvider: DeviceTokenProvider,
         settings: GatewaySettings,
         smsDispatcher: SmsDispatcher,
         deliveryStatusSink: DeliveryStatusSink,
@@ -75,7 +70,6 @@ class ActionCableService private constructor(
     ) : this(
         context,
         Dependencies(
-            tokenProvider = tokenProvider,
             settings = settings,
             smsDispatcher = smsDispatcher,
             deliveryStatusSink = deliveryStatusSink,
@@ -95,7 +89,6 @@ class ActionCableService private constructor(
     private val _connectionState = MutableStateFlow(ConnectionState.DISCONNECTED)
     val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
 
-    private val tokenProvider: DeviceTokenProvider = dependencies.tokenProvider
     private val settings: GatewaySettings = dependencies.settings ?: DataStoreGatewaySettings(context)
     private val smsDispatcher: SmsDispatcher = dependencies.smsDispatcher ?: AndroidSmsDispatcher(context)
     private val deliveryStatusSink: DeliveryStatusSink = dependencies.deliveryStatusSink
@@ -178,22 +171,6 @@ class ActionCableService private constructor(
             return@withLock
         }
 
-        val tokenResult = tokenProvider.fetchToken()
-        val deviceToken = when {
-            tokenResult.isSuccess -> tokenResult.getOrNull().orEmpty()
-            else -> {
-                Log.e(TAG, "Failed to fetch Firebase token", tokenResult.exceptionOrNull())
-                _connectionState.value = ConnectionState.ERROR
-                return@withLock
-            }
-        }
-
-        if (deviceToken.isBlank()) {
-            Log.w(TAG, "Device token is empty")
-            _connectionState.value = ConnectionState.ERROR
-            return@withLock
-        }
-
         _connectionState.value = ConnectionState.CONNECTING
         currentDeviceKey = trimmedKey
 
@@ -201,7 +178,7 @@ class ActionCableService private constructor(
             runCatching {
                 tearDownConnection()
 
-                val consumer = createConsumer(trimmedKey, deviceToken).also { this@ActionCableService.consumer = it }
+                val consumer = createConsumer(trimmedKey).also { this@ActionCableService.consumer = it }
                 connectionSubscription = subscribeToConnectionEvents(consumer)
                 messageSubscription = subscribeToMessageEvents(consumer)
 
@@ -266,13 +243,12 @@ class ActionCableService private constructor(
             .onFailure { error -> Log.e(TAG, "Error send message request: $messageId", error) }
     }
 
-    private suspend fun createConsumer(deviceKey: String, deviceToken: String): Consumer {
+    private suspend fun createConsumer(deviceKey: String): Consumer {
         val options = Consumer.Options().apply {
             reconnection = true
             reconnectionMaxAttempts = 5
             headers = mapOf(
-                HEADER_DEVICE_KEY to deviceKey,
-                HEADER_DEVICE_TOKEN to deviceToken,
+                HEADER_DEVICE_KEY to deviceKey
             )
         }
 
@@ -467,7 +443,6 @@ class ActionCableService private constructor(
         private const val EXTRA_PHONE_NUMBER = "extra_phone_number"
 
         private const val HEADER_DEVICE_KEY = "X-Device-Key"
-        private const val HEADER_DEVICE_TOKEN = "X-Device-Token"
 
         @Volatile
         private var instance: ActionCableService? = null
