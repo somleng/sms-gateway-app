@@ -33,11 +33,8 @@ jobs:
           echo "${{ secrets.GOOGLE_SERVICES_JSON_DEV }}" | base64 -d > app/src/dev/google-services.json
           jq -e . app/src/dev/google-services.json > /dev/null
 
-      - name: Build
-        run: ./gradlew --no-daemon --info assembleDevDebug
-
-      - name: Run unit tests
-        run: ./gradlew --no-daemon --info testDevDebugUnitTest
+      - name: Run tests
+        run: ./gradlew --no-daemon check
 
   release-please:
     name: Run Release Please
