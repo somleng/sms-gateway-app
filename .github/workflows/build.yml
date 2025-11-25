@@ -34,7 +34,7 @@ jobs:
           jq -e . app/src/dev/google-services.json > /dev/null
 
       - name: Run tests
-        run: ./gradlew --no-daemon testDevDebugUnitTest
+        run: ./gradlew --no-daemon test
 
   release-please:
     name: Run Release Please

@@ -1,27 +1,23 @@
 package org.somleng.sms_gateway_app.services
 
+import android.Manifest
 import android.app.Activity
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.os.Build
+import android.content.pm.PackageManager
 import android.telephony.SmsManager
 import android.util.Log
 import androidx.annotation.VisibleForTesting
 import androidx.core.content.ContextCompat
-import androidx.core.content.getSystemService
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.hosopy.actioncable.ActionCable
 import com.hosopy.actioncable.Channel
 import com.hosopy.actioncable.Consumer
 import com.hosopy.actioncable.Subscription
-import java.net.URI
-import java.util.concurrent.atomic.AtomicInteger
-import kotlin.coroutines.CoroutineContext
-import kotlin.jvm.Volatile
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -34,17 +30,15 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.somleng.sms_gateway_app.BuildConfig
-import org.somleng.sms_gateway_app.R
 import org.somleng.sms_gateway_app.data.preferences.SettingsDataStore
+import java.net.URI
+import java.util.concurrent.atomic.AtomicInteger
+import kotlin.coroutines.CoroutineContext
 
-class ActionCableService private constructor(
-    private val context: Context,
-    private val dependencies: Dependencies = Dependencies()
+class ActionCableService @VisibleForTesting internal constructor(
+    context: Context,
+    dependencies: Dependencies
 ) {
-
-    /**
-     * Dependency holder for testing.
-     */
     @VisibleForTesting
     internal data class Dependencies(
         val settings: GatewaySettings? = null,
@@ -52,31 +46,7 @@ class ActionCableService private constructor(
         val deliveryStatusSink: DeliveryStatusSink? = null,
         val serviceScope: CoroutineScope? = null,
         val ioContext: CoroutineContext = Dispatchers.IO,
-        val registerReceivers: Boolean = true
-    )
-
-    /**
-     * Testing constructor.
-     */
-    @VisibleForTesting
-    internal constructor(
-        context: Context,
-        settings: GatewaySettings,
-        smsDispatcher: SmsDispatcher,
-        deliveryStatusSink: DeliveryStatusSink,
-        serviceScope: CoroutineScope,
-        ioContext: CoroutineContext = Dispatchers.IO,
-        registerReceivers: Boolean = false
-    ) : this(
-        context,
-        Dependencies(
-            settings = settings,
-            smsDispatcher = smsDispatcher,
-            deliveryStatusSink = deliveryStatusSink,
-            serviceScope = serviceScope,
-            ioContext = ioContext,
-            registerReceivers = registerReceivers
-        )
+        val registerSmsStatusReceivers: Boolean = true,
     )
 
     enum class ConnectionState {
@@ -86,18 +56,29 @@ class ActionCableService private constructor(
         ERROR
     }
 
+    private val appContext: Context = context.applicationContext ?: context
+
+    // ActionCable
     private val _connectionState = MutableStateFlow(ConnectionState.DISCONNECTED)
     val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
 
-    private val settings: GatewaySettings = dependencies.settings ?: DataStoreGatewaySettings(context)
-    private val smsDispatcher: SmsDispatcher = dependencies.smsDispatcher ?: AndroidSmsDispatcher(context)
+    private var consumer: Consumer? = null
+    private var connectionSubscription: Subscription? = null
+
+    @VisibleForTesting
+    internal var messageSubscription: Subscription? = null
+
+
+    // Dependencies
+    private val settings: GatewaySettings = dependencies.settings ?: DataStoreGatewaySettings(appContext)
+    private val smsDispatcher: SmsDispatcher = dependencies.smsDispatcher ?: AndroidSmsDispatcher(appContext)
     private val deliveryStatusSink: DeliveryStatusSink = dependencies.deliveryStatusSink
         ?: ActionCableDeliveryStatusSink { messageSubscription }
     private val serviceScope: CoroutineScope = dependencies.serviceScope
         ?: CoroutineScope(SupervisorJob() + dependencies.ioContext)
     private val ioContext: CoroutineContext = dependencies.ioContext
 
-    private val settingsDataStore = SettingsDataStore(context)
+    private val settingsDataStore = SettingsDataStore(appContext)
     private val pendingIntentRequestCode = AtomicInteger()
 
     private val connectMutex = Mutex()
@@ -105,11 +86,12 @@ class ActionCableService private constructor(
     @Volatile
     private var currentDeviceKey: String? = null
 
-    private var consumer: Consumer? = null
-    private var connectionSubscription: Subscription? = null
-
     @VisibleForTesting
-    internal var messageSubscription: Subscription? = null
+    internal var hasSendSmsPermission: () -> Boolean = {
+        ContextCompat.checkSelfPermission(appContext, Manifest.permission.SEND_SMS) ==
+            PackageManager.PERMISSION_GRANTED
+    }
+
 
     @VisibleForTesting
     internal val smsSentReceiver = object : BroadcastReceiver() {
@@ -157,32 +139,31 @@ class ActionCableService private constructor(
     }
 
     init {
-        if (dependencies.registerReceivers) {
+        if (dependencies.registerSmsStatusReceivers) {
             registerSmsStatusReceivers()
         }
     }
 
+    // NOTE: Make sure there is only thread be able to connect
     suspend fun connect(deviceKey: String, forceReconnect: Boolean = false) = connectMutex.withLock {
-        val trimmedKey = deviceKey.trim()
-
         // Idempotent: skip if already connected with same key
-        if (!forceReconnect && isConnected() && currentDeviceKey == trimmedKey) {
-            Log.d(TAG, "Already connected with device key: $trimmedKey")
+        if (!forceReconnect && isConnected() && currentDeviceKey == deviceKey) {
+            Log.d(TAG, "Already connected with device key: $deviceKey")
             return@withLock
         }
 
         _connectionState.value = ConnectionState.CONNECTING
-        currentDeviceKey = trimmedKey
+        currentDeviceKey = deviceKey
 
         withContext(ioContext) {
             runCatching {
                 tearDownConnection()
 
-                val consumer = createConsumer(trimmedKey).also { this@ActionCableService.consumer = it }
+                val consumer = createConsumer(deviceKey).also { this@ActionCableService.consumer = it }
                 connectionSubscription = subscribeToConnectionEvents(consumer)
                 messageSubscription = subscribeToMessageEvents(consumer)
 
-                Log.d(TAG, "Connecting to ActionCable with device key: $trimmedKey")
+                Log.d(TAG, "Connecting to ActionCable with device key: $deviceKey")
                 consumer.connect()
             }.onFailure { error ->
                 Log.e(TAG, "Error connecting to ActionCable", error)
@@ -363,7 +344,14 @@ class ActionCableService private constructor(
         }
     }
 
-    private fun sendSms(phoneNumber: String, messageBody: String, messageId: String?) {
+    @VisibleForTesting
+    internal fun sendSms(phoneNumber: String, messageBody: String, messageId: String?) {
+        if (!hasSendSmsPermission()) {
+            Log.w(TAG, "Cannot send SMS to $phoneNumber because SEND_SMS permission is not granted")
+            deliveryStatusSink.reportStatus(messageId, "failed")
+            return
+        }
+
         val sentIntent = createSmsPendingIntent(ACTION_SMS_SENT, messageId, phoneNumber)
         val deliveredIntent = createSmsPendingIntent(ACTION_SMS_DELIVERED, messageId, phoneNumber)
 
@@ -401,13 +389,13 @@ class ActionCableService private constructor(
 
     private fun registerSmsStatusReceivers() {
         ContextCompat.registerReceiver(
-            context,
+            appContext,
             smsSentReceiver,
             IntentFilter(ACTION_SMS_SENT),
             ContextCompat.RECEIVER_NOT_EXPORTED
         )
         ContextCompat.registerReceiver(
-            context,
+            appContext,
             smsDeliveredReceiver,
             IntentFilter(ACTION_SMS_DELIVERED),
             ContextCompat.RECEIVER_NOT_EXPORTED
@@ -418,15 +406,15 @@ class ActionCableService private constructor(
     internal fun createSmsPendingIntent(action: String, messageId: String?, phoneNumber: String): PendingIntent {
         val requestCode = pendingIntentRequestCode.getAndIncrement()
         val intent = Intent(action).apply {
-            setPackage(context.packageName)
+            setPackage(appContext.packageName)
             putExtra(EXTRA_MESSAGE_ID, messageId)
             putExtra(EXTRA_PHONE_NUMBER, phoneNumber)
         }
 
         val flags = PendingIntent.FLAG_UPDATE_CURRENT or
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0
+                PendingIntent.FLAG_IMMUTABLE
 
-        return PendingIntent.getBroadcast(context, requestCode, intent, flags)
+        return PendingIntent.getBroadcast(appContext, requestCode, intent, flags)
     }
 
     private fun JsonElement?.safeAsString(): String? {
@@ -437,8 +425,8 @@ class ActionCableService private constructor(
         private const val TAG = "ActionCableService"
         private const val CONNECTION_CHANNEL = "SMSGatewayConnectionChannel"
         private const val MESSAGE_CHANNEL = "SMSMessageChannel"
-        private const val ACTION_SMS_SENT = "org.somleng.sms_gateway_app.ACTION_SMS_SENT"
-        private const val ACTION_SMS_DELIVERED = "org.somleng.sms_gateway_app.ACTION_SMS_DELIVERED"
+        private const val ACTION_SMS_SENT = "${BuildConfig.APPLICATION_ID}.ACTION_SMS_SENT"
+        private const val ACTION_SMS_DELIVERED = "${BuildConfig.APPLICATION_ID}.ACTION_SMS_DELIVERED"
         private const val EXTRA_MESSAGE_ID = "extra_message_id"
         private const val EXTRA_PHONE_NUMBER = "extra_phone_number"
 
@@ -450,10 +438,9 @@ class ActionCableService private constructor(
         @Synchronized
         fun getInstance(context: Context): ActionCableService {
             if (instance == null) {
-                instance = ActionCableService(context.applicationContext)
+                instance = ActionCableService(context.applicationContext, Dependencies())
             }
             return instance!!
         }
     }
 }
-

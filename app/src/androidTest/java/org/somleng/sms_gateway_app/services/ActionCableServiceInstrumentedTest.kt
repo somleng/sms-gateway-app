@@ -1,108 +1,103 @@
 package org.somleng.sms_gateway_app.services
 
 import android.app.Activity
-import android.app.PendingIntent
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.os.Build
+import androidx.core.content.ContextCompat
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import io.mockk.coEvery
 import io.mockk.mockk
-import io.mockk.verify
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 
 @RunWith(AndroidJUnit4::class)
 class ActionCableServiceInstrumentedTest {
 
-    private lateinit var context: Context
-    private lateinit var settings: GatewaySettings
-    private lateinit var smsDispatcher: SmsDispatcher
-    private lateinit var deliveryStatusSink: DeliveryStatusSink
+    private lateinit var dependencies: ActionCableService.Dependencies
     private lateinit var service: ActionCableService
 
     @Before
     fun setup() {
-        context = ApplicationProvider.getApplicationContext()
-        settings = mockk()
-        smsDispatcher = mockk(relaxed = true)
-        deliveryStatusSink = mockk(relaxed = true)
+        dependencies = ActionCableService.Dependencies(
+            settings = mockk(),
+            smsDispatcher = mockk(relaxed = true),
+            deliveryStatusSink = mockk(relaxed = true),
+            serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
+            ioContext = Dispatchers.IO,
+        )
 
-        coEvery { settings.isReceivingEnabled() } returns true
-        coEvery { settings.isSendingEnabled() } returns true
-        coEvery { settings.getServerHost() } returns null
+        coEvery { dependencies.settings?.isReceivingEnabled() } returns true
+        coEvery { dependencies.settings?.isSendingEnabled() } returns true
+        coEvery { dependencies.settings?.getServerHost() } returns null
 
         service = ActionCableService(
-            context = context,
-            settings = settings,
-            smsDispatcher = smsDispatcher,
-            deliveryStatusSink = deliveryStatusSink,
-            serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
-            ioContext = Dispatchers.IO
+            context = ApplicationProvider.getApplicationContext(),
+            dependencies = dependencies
         )
     }
 
     @Test
-    fun createSmsPendingIntent_embedsPackageName() {
-        // Given
+    fun createSmsPendingIntent_embedsMessageAndPhoneExtras() {
         val action = "org.somleng.sms_gateway_app.ACTION_SMS_SENT"
-        val messageId = "msg-123"
-        val phoneNumber = "+1234567890"
+        val pendingIntent = service.createSmsPendingIntent(
+            action = action,
+            messageId = "msg-456",
+            phoneNumber = "+0987654321"
+        )
 
-        // When
-        val pendingIntent = service.createSmsPendingIntent(action, messageId, phoneNumber)
-
-        // Then
-        assertNotNull(pendingIntent)
-        // PendingIntent doesn't expose its intent directly, but we can verify it was created
+        val broadcast = captureBroadcast(action) { pendingIntent.send() }
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        assertEquals(context.packageName, broadcast.`package`)
+        assertEquals("msg-456", broadcast.getStringExtra("extra_message_id"))
+        assertEquals("+0987654321", broadcast.getStringExtra("extra_phone_number"))
     }
 
     @Test
-    fun createSmsPendingIntent_embedsExtras() {
-        // Given
-        val action = "org.somleng.sms_gateway_app.ACTION_SMS_SENT"
-        val messageId = "msg-456"
-        val phoneNumber = "+0987654321"
+    fun createSmsPendingIntent_usesImmutableFlagWhenApi23Plus() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+            return
+        }
 
-        // When
-        val pendingIntent = service.createSmsPendingIntent(action, messageId, phoneNumber)
-
-        // Then
-        assertNotNull(pendingIntent)
-        // The intent is created with the correct extras (verified through integration)
-    }
-
-    @Test
-    fun createSmsPendingIntent_usesImmutableFlagOnApi23Plus() {
-        // Given
         val action = "org.somleng.sms_gateway_app.ACTION_SMS_DELIVERED"
-        val messageId = "msg-789"
-        val phoneNumber = "+1111111111"
+        val pendingIntent = service.createSmsPendingIntent(
+            action = action,
+            messageId = "msg-789",
+            phoneNumber = "+1111111111"
+        )
 
-        // When
-        val pendingIntent = service.createSmsPendingIntent(action, messageId, phoneNumber)
+        val overrideIntent = Intent(action).apply {
+            putExtra("extra_message_id", "overridden")
+            putExtra("extra_phone_number", "+0000000000")
+        }
 
-        // Then
-        assertNotNull(pendingIntent)
-        // PendingIntent should have FLAG_IMMUTABLE set on API 23+
-        // This is implicitly tested by the fact that it doesn't throw
+        val broadcast = captureBroadcast(action) {
+            pendingIntent.send(
+                ApplicationProvider.getApplicationContext(),
+                Activity.RESULT_OK,
+                overrideIntent
+            )
+        }
+
+        assertEquals("msg-789", broadcast.getStringExtra("extra_message_id"))
+        assertEquals("+1111111111", broadcast.getStringExtra("extra_phone_number"))
     }
 
-    // Note: Broadcast receiver tests are removed as they're difficult to test properly
-    // in instrumented tests without actual SMS broadcasts. The broadcast receiver logic
-    // is simple enough that it can be verified through manual testing or end-to-end tests.
-
     @Test
-    fun connectionState_initiallyDisconnected() {
-        // Then
+    fun connectionState_startsAsDisconnected() {
         assertEquals(
             ActionCableService.ConnectionState.DISCONNECTED,
             service.connectionState.value
@@ -110,9 +105,36 @@ class ActionCableServiceInstrumentedTest {
     }
 
     @Test
-    fun isConnected_returnsFalseInitially() {
-        // Then
+    fun isConnected_returnsFalseWhenDisconnected() {
         assertFalse(service.isConnected())
     }
-}
 
+    private fun captureBroadcast(action: String, trigger: () -> Unit): Intent {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val latch = CountDownLatch(1)
+        val receivedIntent = AtomicReference<Intent?>()
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                if (intent?.action == action) {
+                    receivedIntent.set(intent)
+                    latch.countDown()
+                }
+            }
+        }
+
+        ContextCompat.registerReceiver(
+            context,
+            receiver,
+            IntentFilter(action),
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
+        try {
+            trigger()
+            assertTrue("Timed out waiting for broadcast for $action", latch.await(2, TimeUnit.SECONDS))
+        } finally {
+            context.unregisterReceiver(receiver)
+        }
+
+        return requireNotNull(receivedIntent.get())
+    }
+}

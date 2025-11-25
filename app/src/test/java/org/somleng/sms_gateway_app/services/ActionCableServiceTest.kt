@@ -5,15 +5,15 @@ import androidx.test.core.app.ApplicationProvider
 import com.google.gson.JsonObject
 import com.hosopy.actioncable.Subscription
 import io.mockk.coEvery
-import io.mockk.coVerify
-import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.test.TestCoroutineDispatcher
-import kotlinx.coroutines.test.runBlockingTest
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestDispatcher
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.runTest
 import org.junit.Before
 import org.junit.Test
 import org.junit.Assert.*
@@ -26,155 +26,183 @@ import org.robolectric.annotation.Config
 @Config(sdk = [28])
 class ActionCableServiceTest {
 
-    private lateinit var context: Context
-    private lateinit var settings: GatewaySettings
-    private lateinit var smsDispatcher: SmsDispatcher
-    private lateinit var deliveryStatusSink: DeliveryStatusSink
+    private lateinit var dependencies: ActionCableService.Dependencies
+    private lateinit var testDispatcher: TestDispatcher
+
     private lateinit var messageSubscription: Subscription
-    private lateinit var testDispatcher: TestCoroutineDispatcher
     private lateinit var service: ActionCableService
+
 
     @Before
     fun setup() {
-        context = ApplicationProvider.getApplicationContext()
-        settings = mockk()
-        smsDispatcher = mockk(relaxed = true)
-        deliveryStatusSink = mockk(relaxed = true)
+        testDispatcher = StandardTestDispatcher()
         messageSubscription = mockk(relaxed = true)
-        testDispatcher = TestCoroutineDispatcher()
 
-        service = ActionCableService(
-            context = context,
-            settings = settings,
-            smsDispatcher = smsDispatcher,
-            deliveryStatusSink = deliveryStatusSink,
+        dependencies = ActionCableService.Dependencies(
+            settings = mockk(),
+            smsDispatcher = mockk(relaxed = true),
+            deliveryStatusSink = mockk(relaxed = true),
             serviceScope = CoroutineScope(testDispatcher),
-            ioContext = Dispatchers.Unconfined
+            ioContext = Dispatchers.Unconfined,
+            registerSmsStatusReceivers = false
         )
 
-        // Set the message subscription for tests
+        service = ActionCableService(
+            context = ApplicationProvider.getApplicationContext(),
+            dependencies = dependencies
+        )
         service.messageSubscription = messageSubscription
     }
 
     @Test
-    fun `notifyNewInboundMessage forwards SMS when receiving is enabled`() = testDispatcher.runBlockingTest {
-        // Given
-        coEvery { settings.isReceivingEnabled() } returns true
-        val from = "+1234567890"
-        val to = "+0987654321"
-        val body = "Test message"
+    fun `notifyNewInboundMessage forwards SMS when receiving is enabled`() = runSuspendTest {
+        stubReceiving(enabled = true)
 
-        // When
-        service.notifyNewInboundMessage(from, to, body)
+        notifyInbound(
+            from = "1234",
+            to = "85510123456",
+            body = "Hello, world!"
+        )
 
-        // Then
-        verify {
-            messageSubscription.perform(eq("received"), match<JsonObject> { payload ->
-                payload["from"].asString == from &&
-                        payload["to"].asString == to &&
-                        payload["body"].asString == body
-            })
-        }
+        verifyInboundForwarded(
+            from = "1234",
+            to = "85510123456",
+            body = "Hello, world!"
+        )
     }
 
     @Test
-    fun `notifyNewInboundMessage skips forwarding when receiving is disabled`() = testDispatcher.runBlockingTest {
-        // Given
-        coEvery { settings.isReceivingEnabled() } returns false
-        val from = "+1234567890"
-        val to = "+0987654321"
-        val body = "Test message"
+    fun `notifyNewInboundMessage skips forwarding when receiving is disabled`() = runSuspendTest {
+        stubReceiving(enabled = false)
 
-        // When
-        service.notifyNewInboundMessage(from, to, body)
+        notifyInbound(
+            from = "1234",
+            to = "85510123456",
+            body = "Hello, world!"
+        )
 
-        // Then
-        verify(exactly = 0) {
-            messageSubscription.perform(any(), any<JsonObject>())
-        }
+        verifyNoInboundForwarded()
     }
 
     @Test
-    fun `notifyNewInboundMessage skips forwarding when not connected`() = testDispatcher.runBlockingTest {
-        // Given
+    fun `notifyNewInboundMessage skips forwarding when not connected`() = runSuspendTest {
         service.messageSubscription = null
-        coEvery { settings.isReceivingEnabled() } returns true
+        stubReceiving(enabled = true)
 
-        // When
-        service.notifyNewInboundMessage("+1234567890", "+0987654321", "Test")
+        notifyInbound(
+            from = "1234",
+            to = "85510123456",
+            body = "Hello, world!"
+        )
 
-        // Then
-        verify(exactly = 0) {
-            messageSubscription.perform(any(), any<JsonObject>())
-        }
+        verifyNoInboundForwarded()
     }
 
     @Test
     fun `sendDeliveryStatus ignores null message IDs`() {
-        // When
         service.sendDeliveryStatus(null, "sent")
 
-        // Then
         verify(exactly = 0) {
-            deliveryStatusSink.reportStatus(any(), any())
+            dependencies.deliveryStatusSink?.reportStatus(any(), any())
         }
     }
 
     @Test
     fun `sendDeliveryStatus reports status for valid message ID`() {
-        // Given
-        val messageId = "msg-123"
-        val status = "sent"
+        service.sendDeliveryStatus("msg-123", "sent")
 
-        // When
-        service.sendDeliveryStatus(messageId, status)
-
-        // Then
         verify {
-            deliveryStatusSink.reportStatus(messageId, status)
+            dependencies.deliveryStatusSink?.reportStatus("msg-123", "sent")
         }
     }
 
     @Test
     fun `sendMessageRequest sends correct payload`() {
-        // Given
-        val messageId = "msg-456"
+        service.sendMessageRequest("msg-123")
 
-        // When
-        service.sendMessageRequest(messageId)
-
-        // Then
         verify {
             messageSubscription.perform(eq("message_send_requested"), match<JsonObject> { payload ->
-                payload["id"].asString == messageId
+                payload.string("id") == "msg-123"
             })
         }
     }
 
     @Test
     fun `connection state starts as DISCONNECTED`() {
-        // Then
         assertEquals(ActionCableService.ConnectionState.DISCONNECTED, service.connectionState.value)
-    }
-
-    @Test
-    fun `isConnected returns false when disconnected`() {
-        // Then
         assertFalse(service.isConnected())
     }
 
     @Test
-    fun `sendHeartbeat performs ping on connection subscription`() {
-        // Given
-        val connectionSubscription = mockk<Subscription>(relaxed = true)
-        // Use reflection or a test-friendly approach to set connectionSubscription
-        // For now, we'll just test the public behavior
+    fun `sendSms does not dispatch when SEND_SMS permission is missing`() {
+        service.hasSendSmsPermission = { false }
 
-        // When
-        service.sendHeartbeat()
+        service.sendSms(
+            phoneNumber = "+85516701721",
+            messageBody = "Hello",
+            messageId = "msg-123"
+        )
 
-        // Then - this would require access to connectionSubscription
-        // In a real scenario, you'd verify the subscription was called
+        verify(exactly = 0) {
+            dependencies.smsDispatcher?.sendTextMessage(any(), any(), any(), any(), any())
+        }
+        verify {
+            dependencies.deliveryStatusSink?.reportStatus("msg-123", "failed")
+        }
     }
-}
 
+    @Test
+    fun `sendSms dispatches when SEND_SMS permission is granted`() {
+        service.hasSendSmsPermission = { true }
+
+        service.sendSms(
+            phoneNumber = "+85516701721",
+            messageBody = "Hello",
+            messageId = "msg-456"
+        )
+
+        verify {
+            dependencies.smsDispatcher?.sendTextMessage(
+                "+85516701721",
+                null,
+                "Hello",
+                any(),
+                any()
+            )
+        }
+    }
+
+    private fun runSuspendTest(block: suspend TestScope.() -> Unit) = runTest(testDispatcher) { block() }
+
+    private fun stubReceiving(enabled: Boolean) {
+        coEvery { dependencies.settings?.isReceivingEnabled() } returns enabled
+    }
+
+    private suspend fun notifyInbound(
+        from: String,
+        to: String,
+        body: String
+    ) = service.notifyNewInboundMessage(from, to, body)
+
+    private fun verifyInboundForwarded(
+        from: String,
+        to: String,
+        body: String
+    ) {
+        verify {
+            messageSubscription.perform(eq("received"), match<JsonObject> { payload ->
+                payload.string("from") == from &&
+                        payload.string("to") == to &&
+                        payload.string("body") == body
+            })
+        }
+    }
+
+    private fun verifyNoInboundForwarded() {
+        verify(exactly = 0) {
+            messageSubscription.perform(any(), any<JsonObject>())
+        }
+    }
+
+    private fun JsonObject.string(key: String) = get(key).asString
+}
