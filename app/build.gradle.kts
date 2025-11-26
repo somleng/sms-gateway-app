@@ -69,6 +69,14 @@ android {
     buildConfig = true
   }
 
+  packaging {
+    resources {
+      excludes += "/META-INF/{AL2.0,LGPL2.1}"
+      excludes += "/META-INF/LICENSE.md"
+      excludes += "/META-INF/LICENSE-notice.md"
+    }
+  }
+
   applicationVariants.all {
     val variant = this
     outputs.all {
@@ -100,8 +108,17 @@ dependencies {
   implementation(libs.actioncable.client)
   implementation(libs.gson)
   testImplementation(libs.junit)
+  testImplementation(libs.kotlinx.coroutines.test)
+  testImplementation(libs.mockk)
+  testImplementation(libs.robolectric)
+  testImplementation(libs.androidx.test.core)
+  testImplementation(libs.androidx.test.core.ktx)
   androidTestImplementation(libs.androidx.junit)
   androidTestImplementation(libs.androidx.espresso.core)
+  androidTestImplementation(libs.androidx.test.core)
+  androidTestImplementation(libs.androidx.test.core.ktx)
+  androidTestImplementation(libs.kotlinx.coroutines.test)
+  androidTestImplementation(libs.mockk.android)
   androidTestImplementation(platform(libs.androidx.compose.bom))
   androidTestImplementation(libs.androidx.ui.test.junit4)
   debugImplementation(libs.androidx.ui.tooling)

@@ -1,27 +1,23 @@
 package org.somleng.sms_gateway_app.services
 
+import android.Manifest
 import android.app.Activity
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.os.Build
+import android.content.pm.PackageManager
 import android.telephony.SmsManager
 import android.util.Log
+import androidx.annotation.VisibleForTesting
 import androidx.core.content.ContextCompat
-import androidx.core.content.getSystemService
-import com.google.firebase.messaging.FirebaseMessaging
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.hosopy.actioncable.ActionCable
 import com.hosopy.actioncable.Channel
 import com.hosopy.actioncable.Consumer
 import com.hosopy.actioncable.Subscription
-import java.net.URI
-import java.util.concurrent.atomic.AtomicInteger
-import kotlin.coroutines.resume
-import kotlin.jvm.Volatile
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -30,15 +26,28 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.somleng.sms_gateway_app.BuildConfig
-import org.somleng.sms_gateway_app.R
 import org.somleng.sms_gateway_app.data.preferences.SettingsDataStore
+import java.net.URI
+import java.util.concurrent.atomic.AtomicInteger
+import kotlin.coroutines.CoroutineContext
 
-class ActionCableService private constructor(private val context: Context) {
+class ActionCableService @VisibleForTesting internal constructor(
+    context: Context,
+    dependencies: Dependencies
+) {
+    @VisibleForTesting
+    internal data class Dependencies(
+        val settings: GatewaySettings? = null,
+        val smsDispatcher: SmsDispatcher? = null,
+        val deliveryStatusSink: DeliveryStatusSink? = null,
+        val serviceScope: CoroutineScope? = null,
+        val ioContext: CoroutineContext = Dispatchers.IO,
+        val registerSmsStatusReceivers: Boolean = true,
+    )
 
     enum class ConnectionState {
         CONNECTING,
@@ -47,14 +56,29 @@ class ActionCableService private constructor(private val context: Context) {
         ERROR
     }
 
+    private val appContext: Context = context.applicationContext ?: context
+
+    // ActionCable
     private val _connectionState = MutableStateFlow(ConnectionState.DISCONNECTED)
     val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
-    private val smsManager: SmsManager by lazy {
-        context.getSystemService(SmsManager::class.java)
-    }
 
-    private val settingsDataStore = SettingsDataStore(context)
-    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var consumer: Consumer? = null
+    private var connectionSubscription: Subscription? = null
+
+    @VisibleForTesting
+    internal var messageSubscription: Subscription? = null
+
+
+    // Dependencies
+    private val settings: GatewaySettings = dependencies.settings ?: DataStoreGatewaySettings(appContext)
+    private val smsDispatcher: SmsDispatcher = dependencies.smsDispatcher ?: AndroidSmsDispatcher(appContext)
+    private val deliveryStatusSink: DeliveryStatusSink = dependencies.deliveryStatusSink
+        ?: ActionCableDeliveryStatusSink { messageSubscription }
+    private val serviceScope: CoroutineScope = dependencies.serviceScope
+        ?: CoroutineScope(SupervisorJob() + dependencies.ioContext)
+    private val ioContext: CoroutineContext = dependencies.ioContext
+
+    private val settingsDataStore = SettingsDataStore(appContext)
     private val pendingIntentRequestCode = AtomicInteger()
 
     private val connectMutex = Mutex()
@@ -62,18 +86,22 @@ class ActionCableService private constructor(private val context: Context) {
     @Volatile
     private var currentDeviceKey: String? = null
 
-    private var consumer: Consumer? = null
-    private var connectionSubscription: Subscription? = null
-    private var messageSubscription: Subscription? = null
+    @VisibleForTesting
+    internal var hasSendSmsPermission: () -> Boolean = {
+        ContextCompat.checkSelfPermission(appContext, Manifest.permission.SEND_SMS) ==
+            PackageManager.PERMISSION_GRANTED
+    }
 
-    private val smsSentReceiver = object : BroadcastReceiver() {
+
+    @VisibleForTesting
+    internal val smsSentReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             val messageId = intent?.getStringExtra(EXTRA_MESSAGE_ID)
             val phoneNumber = intent?.getStringExtra(EXTRA_PHONE_NUMBER).orEmpty()
             when (resultCode) {
                 Activity.RESULT_OK -> {
                     Log.d(TAG, "SMS sent broadcast received for $phoneNumber")
-                    sendDeliveryStatus(messageId, "sent")
+                    deliveryStatusSink.reportStatus(messageId, "sent")
                 }
 
                 else -> {
@@ -90,19 +118,20 @@ class ActionCableService private constructor(private val context: Context) {
                     }
 
                     Log.e(TAG, "SMS send failed for $phoneNumber: $reason")
-                    sendDeliveryStatus(messageId, "failed")
+                    deliveryStatusSink.reportStatus(messageId, "failed")
                 }
             }
         }
     }
 
-    private val smsDeliveredReceiver = object : BroadcastReceiver() {
+    @VisibleForTesting
+    internal val smsDeliveredReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             val messageId = intent?.getStringExtra(EXTRA_MESSAGE_ID)
             val phoneNumber = intent?.getStringExtra(EXTRA_PHONE_NUMBER).orEmpty()
             if (resultCode == Activity.RESULT_OK) {
                 Log.d(TAG, "Delivery confirmed for $phoneNumber")
-                sendDeliveryStatus(messageId, "delivered")
+                deliveryStatusSink.reportStatus(messageId, "delivered")
             } else {
                 Log.w(TAG, "Delivery not confirmed for $phoneNumber (code=$resultCode)")
             }
@@ -110,46 +139,31 @@ class ActionCableService private constructor(private val context: Context) {
     }
 
     init {
-        registerSmsStatusReceivers()
+        if (dependencies.registerSmsStatusReceivers) {
+            registerSmsStatusReceivers()
+        }
     }
 
+    // NOTE: Make sure there is only thread be able to connect
     suspend fun connect(deviceKey: String, forceReconnect: Boolean = false) = connectMutex.withLock {
-        val trimmedKey = deviceKey.trim()
-
         // Idempotent: skip if already connected with same key
-        if (!forceReconnect && isConnected() && currentDeviceKey == trimmedKey) {
-            Log.d(TAG, "Already connected with device key: $trimmedKey")
-            return@withLock
-        }
-
-        val tokenResult = fetchDeviceToken()
-        val deviceToken = when {
-            tokenResult.isSuccess -> tokenResult.getOrNull().orEmpty()
-            else -> {
-                Log.e(TAG, "Failed to fetch Firebase token", tokenResult.exceptionOrNull())
-                _connectionState.value = ConnectionState.ERROR
-                return@withLock
-            }
-        }
-
-        if (deviceToken.isBlank()) {
-            Log.w(TAG, "Device token is empty")
-            _connectionState.value = ConnectionState.ERROR
+        if (!forceReconnect && isConnected() && currentDeviceKey == deviceKey) {
+            Log.d(TAG, "Already connected with device key: $deviceKey")
             return@withLock
         }
 
         _connectionState.value = ConnectionState.CONNECTING
-        currentDeviceKey = trimmedKey
+        currentDeviceKey = deviceKey
 
-        withContext(Dispatchers.IO) {
+        withContext(ioContext) {
             runCatching {
                 tearDownConnection()
 
-                val consumer = createConsumer(trimmedKey, deviceToken).also { this@ActionCableService.consumer = it }
+                val consumer = createConsumer(deviceKey).also { this@ActionCableService.consumer = it }
                 connectionSubscription = subscribeToConnectionEvents(consumer)
                 messageSubscription = subscribeToMessageEvents(consumer)
 
-                Log.d(TAG, "Connecting to ActionCable with device key: $trimmedKey")
+                Log.d(TAG, "Connecting to ActionCable with device key: $deviceKey")
                 consumer.connect()
             }.onFailure { error ->
                 Log.e(TAG, "Error connecting to ActionCable", error)
@@ -185,7 +199,7 @@ class ActionCableService private constructor(private val context: Context) {
             return
         }
 
-        if (!settingsDataStore.isReceivingEnabled()) {
+        if (!settings.isReceivingEnabled()) {
             Log.i(TAG, "Receiving disabled; skipping forwarding SMS from $from to Somleng.")
             return
         }
@@ -210,13 +224,12 @@ class ActionCableService private constructor(private val context: Context) {
             .onFailure { error -> Log.e(TAG, "Error send message request: $messageId", error) }
     }
 
-    private suspend fun createConsumer(deviceKey: String, deviceToken: String): Consumer {
+    private suspend fun createConsumer(deviceKey: String): Consumer {
         val options = Consumer.Options().apply {
             reconnection = true
             reconnectionMaxAttempts = 5
             headers = mapOf(
-                HEADER_DEVICE_KEY to deviceKey,
-                HEADER_DEVICE_TOKEN to deviceToken,
+                HEADER_DEVICE_KEY to deviceKey
             )
         }
 
@@ -318,12 +331,12 @@ class ActionCableService private constructor(private val context: Context) {
         }
 
         serviceScope.launch {
-            if (!settingsDataStore.isSendingEnabled()) {
+            if (!settings.isSendingEnabled()) {
                 Log.i(
                     TAG,
                     "Outgoing Message is disabled."
                 )
-                sendDeliveryStatus(messageId, "failed")
+                deliveryStatusSink.reportStatus(messageId, "failed")
                 return@launch
             }
 
@@ -331,12 +344,19 @@ class ActionCableService private constructor(private val context: Context) {
         }
     }
 
-    private fun sendSms(phoneNumber: String, messageBody: String, messageId: String?) {
+    @VisibleForTesting
+    internal fun sendSms(phoneNumber: String, messageBody: String, messageId: String?) {
+        if (!hasSendSmsPermission()) {
+            Log.w(TAG, "Cannot send SMS to $phoneNumber because SEND_SMS permission is not granted")
+            deliveryStatusSink.reportStatus(messageId, "failed")
+            return
+        }
+
         val sentIntent = createSmsPendingIntent(ACTION_SMS_SENT, messageId, phoneNumber)
         val deliveredIntent = createSmsPendingIntent(ACTION_SMS_DELIVERED, messageId, phoneNumber)
 
         runCatching {
-            smsManager.sendTextMessage(
+            smsDispatcher.sendTextMessage(
                 phoneNumber,
                 null,
                 messageBody,
@@ -347,23 +367,15 @@ class ActionCableService private constructor(private val context: Context) {
             Log.d(TAG, "SMS sent to $phoneNumber")
         }.onFailure { error ->
             Log.e(TAG, "Error sending SMS to $phoneNumber", error)
-            sendDeliveryStatus(messageId, "failed")
+            deliveryStatusSink.reportStatus(messageId, "failed")
         }
     }
 
-    private fun sendDeliveryStatus(messageId: String?, status: String) {
-        if (messageId == null) return
-
-        val payload = JsonObject().apply {
-            addProperty("id", messageId)
-            addProperty("status", status)
-        }
-
-        runCatching {
-            messageSubscription?.perform("sent", payload)
+    @VisibleForTesting
+    internal fun sendDeliveryStatus(messageId: String?, status: String) {
+        if (messageId != null) {
+            deliveryStatusSink.reportStatus(messageId, status)
             Log.d(TAG, "Reported delivery status '$status' for message $messageId")
-        }.onFailure { error ->
-            Log.e(TAG, "Error sending delivery status", error)
         }
     }
 
@@ -377,64 +389,48 @@ class ActionCableService private constructor(private val context: Context) {
 
     private fun registerSmsStatusReceivers() {
         ContextCompat.registerReceiver(
-            context,
+            appContext,
             smsSentReceiver,
             IntentFilter(ACTION_SMS_SENT),
             ContextCompat.RECEIVER_NOT_EXPORTED
         )
         ContextCompat.registerReceiver(
-            context,
+            appContext,
             smsDeliveredReceiver,
             IntentFilter(ACTION_SMS_DELIVERED),
             ContextCompat.RECEIVER_NOT_EXPORTED
         )
     }
 
-    private fun createSmsPendingIntent(action: String, messageId: String?, phoneNumber: String): PendingIntent {
+    @VisibleForTesting
+    internal fun createSmsPendingIntent(action: String, messageId: String?, phoneNumber: String): PendingIntent {
         val requestCode = pendingIntentRequestCode.getAndIncrement()
         val intent = Intent(action).apply {
-            setPackage(context.packageName)
+            setPackage(appContext.packageName)
             putExtra(EXTRA_MESSAGE_ID, messageId)
             putExtra(EXTRA_PHONE_NUMBER, phoneNumber)
         }
 
         val flags = PendingIntent.FLAG_UPDATE_CURRENT or
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0
+                PendingIntent.FLAG_IMMUTABLE
 
-        return PendingIntent.getBroadcast(context, requestCode, intent, flags)
+        return PendingIntent.getBroadcast(appContext, requestCode, intent, flags)
     }
 
     private fun JsonElement?.safeAsString(): String? {
         return if (this == null || this.isJsonNull) null else runCatching { this.asString }.getOrNull()
     }
 
-    private suspend fun fetchDeviceToken(): Result<String> {
-        return suspendCancellableCoroutine { continuation ->
-            FirebaseMessaging.getInstance().token
-                .addOnSuccessListener { token ->
-                    if (continuation.isActive) {
-                        continuation.resume(Result.success(token.orEmpty()))
-                    }
-                }
-                .addOnFailureListener { error ->
-                    if (continuation.isActive) {
-                        continuation.resume(Result.failure(error))
-                    }
-                }
-        }
-    }
-
     companion object {
         private const val TAG = "ActionCableService"
         private const val CONNECTION_CHANNEL = "SMSGatewayConnectionChannel"
         private const val MESSAGE_CHANNEL = "SMSMessageChannel"
-        private const val ACTION_SMS_SENT = "org.somleng.sms_gateway_app.ACTION_SMS_SENT"
-        private const val ACTION_SMS_DELIVERED = "org.somleng.sms_gateway_app.ACTION_SMS_DELIVERED"
+        private const val ACTION_SMS_SENT = "${BuildConfig.APPLICATION_ID}.ACTION_SMS_SENT"
+        private const val ACTION_SMS_DELIVERED = "${BuildConfig.APPLICATION_ID}.ACTION_SMS_DELIVERED"
         private const val EXTRA_MESSAGE_ID = "extra_message_id"
         private const val EXTRA_PHONE_NUMBER = "extra_phone_number"
 
         private const val HEADER_DEVICE_KEY = "X-Device-Key"
-        private const val HEADER_DEVICE_TOKEN = "X-Device-Token"
 
         @Volatile
         private var instance: ActionCableService? = null
@@ -442,7 +438,7 @@ class ActionCableService private constructor(private val context: Context) {
         @Synchronized
         fun getInstance(context: Context): ActionCableService {
             if (instance == null) {
-                instance = ActionCableService(context.applicationContext)
+                instance = ActionCableService(context.applicationContext, Dependencies())
             }
             return instance!!
         }
