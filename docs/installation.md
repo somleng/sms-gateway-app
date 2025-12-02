@@ -93,9 +93,26 @@ Enabling restricted settings is required in order to grant the app access to res
 
 Granting SMS permission ensures the SMS Gateway app can send and receive SMS messages as required by your configuration.
 
+
 ---
 
-## 8. Final checks
+## 8. Stay Awake (Optional but Recommended)
+
+For reliable operation, the SMS Gateway app should be able to run continuously while the device is charging. On some devices, aggressive power-saving features can put the device (and the app) to sleep, which may delay or interrupt SMS processing. Enabling a \"stay awake\" behavior while charging helps ensure the app can keep running in the foreground.
+
+If your device supports it, you can enable a developer option to keep the screen on while charging:
+
+1. Open **Settings → Developer options** on your device.
+2. Find the option labeled **Keep screen on while charging** or **Stay Awake** (the exact wording may vary by device).
+3. Turn this option **On**.
+
+This step is optional, but **strongly recommended** for devices that will be used primarily or exclusively as dedicated SMS gateway devices.
+
+<img src="../assets/installation/08-stay-awake.png" alt='Enable the "Stay Awake" / "Keep screen on while charging" option in Developer options' width="300" />
+
+---
+
+## 9. Final checks
 
 After you complete the steps above:
 
