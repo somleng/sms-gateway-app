@@ -15,13 +15,18 @@ class IncomingMessageService : BroadcastReceiver() {
         if (isNewSmsReceived(intent)) {
             Log.d(TAG, "SMS_RECEIVED_ACTION intent received.")
 
-            val messages = Telephony.Sms.Intents.getMessagesFromIntent(intent)
-            messages?.forEach { smsMessage ->
-                val from = smsMessage.originatingAddress
-                val body = smsMessage.messageBody
+            val messages = Telephony.Sms.Intents.getMessagesFromIntent(intent) ?: return
+            val messageGroups = messages.groupBy { it.originatingAddress }
 
-                if (from == null || body == null) {
-                    Log.w(TAG, "Invalid incoming SMS: from=$from or body is null.")
+            messageGroups.forEach { (from, segments) ->
+                if (from == null) {
+                    Log.w(TAG, "Invalid incoming SMS: from is null.")
+                    return@forEach
+                }
+
+                val fullBody = segments.joinToString("") { it.displayMessageBody ?: "" }
+                if (fullBody.isEmpty()) {
+                    Log.w(TAG, "Invalid incoming SMS: body is empty.")
                     return@forEach
                 }
 
@@ -48,10 +53,10 @@ class IncomingMessageService : BroadcastReceiver() {
                             return@launch
                         }
 
-                        Log.i(TAG, "Received SMS: From='$from', To='${phoneNumber}'")
+                        Log.i(TAG, "Received SMS: From='$from', To='${phoneNumber}' (segments: ${segments.size})")
 
                         val actionCableService = ActionCableService.getInstance(appContext)
-                        actionCableService.notifyNewInboundMessage(from, phoneNumber, body)
+                        actionCableService.notifyNewInboundMessage(from, phoneNumber, fullBody)
                     } catch (e: Exception) {
                         Log.e(TAG, "Error notifying new inbound message from $from: ${e.message}", e)
                     }
