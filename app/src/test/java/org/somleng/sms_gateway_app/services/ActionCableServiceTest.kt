@@ -138,13 +138,14 @@ class ActionCableServiceTest {
         service.hasSendSmsPermission = { false }
 
         service.sendSms(
-            phoneNumber = "+85516701721",
+            phoneNumber = "+85510123456",
             messageBody = "Hello",
             messageId = "msg-123"
         )
 
         verify(exactly = 0) {
             dependencies.smsDispatcher?.sendTextMessage(any(), any(), any(), any(), any())
+            dependencies.smsDispatcher?.sendMultipartTextMessage(any(), any(), any(), any(), any())
         }
         verify {
             dependencies.deliveryStatusSink?.reportStatus("msg-123", "failed")
@@ -154,18 +155,44 @@ class ActionCableServiceTest {
     @Test
     fun `sendSms dispatches when SEND_SMS permission is granted`() {
         service.hasSendSmsPermission = { true }
+        val parts = arrayListOf("Hello")
+        coEvery { dependencies.smsDispatcher?.divideMessage("Hello") } returns parts
 
         service.sendSms(
-            phoneNumber = "+85516701721",
+            phoneNumber = "+85510123456",
             messageBody = "Hello",
             messageId = "msg-456"
         )
 
         verify {
             dependencies.smsDispatcher?.sendTextMessage(
-                "+85516701721",
+                "+85510123456",
                 null,
                 "Hello",
+                any(),
+                any()
+            )
+        }
+    }
+
+    @Test
+    fun `sendSms dispatches multipart when message is long`() {
+        service.hasSendSmsPermission = { true }
+        val longMessage = "a".repeat(200)
+        val parts = arrayListOf("part1", "part2")
+        coEvery { dependencies.smsDispatcher?.divideMessage(longMessage) } returns parts
+
+        service.sendSms(
+            phoneNumber = "+85510123456",
+            messageBody = longMessage,
+            messageId = "msg-multipart"
+        )
+
+        verify {
+            dependencies.smsDispatcher?.sendMultipartTextMessage(
+                "+85510123456",
+                null,
+                eq(parts),
                 any(),
                 any()
             )
