@@ -16,6 +16,16 @@ interface SmsDispatcher {
         sentIntent: PendingIntent?,
         deliveryIntent: PendingIntent?
     )
+
+    fun sendMultipartTextMessage(
+        destinationAddress: String,
+        scAddress: String?,
+        parts: ArrayList<String>,
+        sentIntents: ArrayList<PendingIntent>?,
+        deliveryIntents: ArrayList<PendingIntent>?
+    )
+
+    fun divideMessage(text: String): ArrayList<String>
 }
 
 class AndroidSmsDispatcher(private val context: Context) : SmsDispatcher {
@@ -37,5 +47,25 @@ class AndroidSmsDispatcher(private val context: Context) : SmsDispatcher {
             sentIntent,
             deliveryIntent
         )
+    }
+
+    override fun sendMultipartTextMessage(
+        destinationAddress: String,
+        scAddress: String?,
+        parts: ArrayList<String>,
+        sentIntents: ArrayList<PendingIntent>?,
+        deliveryIntents: ArrayList<PendingIntent>?
+    ) {
+        smsManager.sendMultipartTextMessage(
+            destinationAddress,
+            scAddress,
+            parts,
+            sentIntents,
+            deliveryIntents
+        )
+    }
+
+    override fun divideMessage(text: String): ArrayList<String> {
+        return smsManager.divideMessage(text)
     }
 }

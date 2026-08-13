@@ -352,19 +352,39 @@ class ActionCableService @VisibleForTesting internal constructor(
             return
         }
 
-        val sentIntent = createSmsPendingIntent(ACTION_SMS_SENT, messageId, phoneNumber)
-        val deliveredIntent = createSmsPendingIntent(ACTION_SMS_DELIVERED, messageId, phoneNumber)
+        val parts = smsDispatcher.divideMessage(messageBody)
 
         runCatching {
-            smsDispatcher.sendTextMessage(
-                phoneNumber,
-                null,
-                messageBody,
-                sentIntent,
-                deliveredIntent
-            )
+            if (parts.size > 1) {
+                val sentIntents = ArrayList<PendingIntent>()
+                val deliveryIntents = ArrayList<PendingIntent>()
 
-            Log.d(TAG, "SMS sent to $phoneNumber")
+                repeat(parts.size) {
+                    sentIntents.add(createSmsPendingIntent(ACTION_SMS_SENT, messageId, phoneNumber))
+                    deliveryIntents.add(createSmsPendingIntent(ACTION_SMS_DELIVERED, messageId, phoneNumber))
+                }
+
+                smsDispatcher.sendMultipartTextMessage(
+                    phoneNumber,
+                    null,
+                    parts,
+                    sentIntents,
+                    deliveryIntents
+                )
+            } else {
+                val sentIntent = createSmsPendingIntent(ACTION_SMS_SENT, messageId, phoneNumber)
+                val deliveredIntent = createSmsPendingIntent(ACTION_SMS_DELIVERED, messageId, phoneNumber)
+
+                smsDispatcher.sendTextMessage(
+                    phoneNumber,
+                    null,
+                    messageBody,
+                    sentIntent,
+                    deliveredIntent
+                )
+            }
+
+            Log.d(TAG, "SMS sent to $phoneNumber (parts: ${parts.size})")
         }.onFailure { error ->
             Log.e(TAG, "Error sending SMS to $phoneNumber", error)
             deliveryStatusSink.reportStatus(messageId, "failed")
