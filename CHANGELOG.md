@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.4](https://github.com/somleng/sms-gateway-app/compare/v0.5.3...v0.5.4) (2026-08-13)
+
+
+### Bug Fixes
+
+* Bundle multi-parts incoming message into one message before notifying to the server ([#41](https://github.com/somleng/sms-gateway-app/issues/41)) ([19edb03](https://github.com/somleng/sms-gateway-app/commit/19edb03b34dd372c16c4364a5ea1ed5948eeadc5))
+
 ## [0.5.3](https://github.com/somleng/sms-gateway-app/compare/v0.5.2...v0.5.3) (2026-08-13)
 
 
