@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.3](https://github.com/somleng/sms-gateway-app/compare/v0.5.2...v0.5.3) (2026-08-13)
+
+
+### Bug Fixes
+
+* Support Multi-parts SMS ([#39](https://github.com/somleng/sms-gateway-app/issues/39)) ([b96af0c](https://github.com/somleng/sms-gateway-app/commit/b96af0ca731145ad49f53798f8aecfc7300a81ac))
+
 ## [0.5.2](https://github.com/somleng/sms-gateway-app/compare/v0.5.1...v0.5.2) (2025-11-26)
 
 
